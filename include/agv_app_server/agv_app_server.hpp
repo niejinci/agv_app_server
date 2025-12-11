@@ -98,6 +98,12 @@ private:
     // 发布指令响应
     void publish_cmd_response(const std::string & request_id, const std::string & cmd_type,
                             bool success, const std::string & message);
+
+    // 互斥锁
+    std::mutex agv_pos_mutex_;
+
+    // 默认构造时它是 nullopt (无值状态)
+    std::optional<agv_service::msg::AgvPosition> latest_agv_pos_;
 };
 
 } // namespace agv_app_server

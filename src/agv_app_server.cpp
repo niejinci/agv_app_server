@@ -260,6 +260,11 @@ void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::Share
 // locationInfo 发布频率 10hz
 void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo::SharedPtr msg)
 {
+    {
+        std::lock_guard<std::mutex> lock(agv_pos_mutex_);
+        latest_agv_pos_ = msg->agv_position;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "agv_position";
@@ -281,48 +286,89 @@ void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo
 // 处理 避障点云 数据流
 void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
+    {
+        // 锁只保护共享资源的读写
+        std::lock_guard<std::mutex> lock(agv_pos_mutex_);
+        agv_pos_copy = latest_agv_pos_;
+    }
+    if (!agv_pos_copy.has_value()) {
+        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping scan2pointcloud processing.");
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "scan2pointcloud";
     // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    render(msg, agv_service::msg::AgvPosition(), response);
+    response.points = processPointCloud(msg, agv_pos_copy.value());
     pub_app_data_->publish(response);
 }
 
 // 处理 障碍物点云 数据流
 void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
+    {
+        std::lock_guard<std::mutex> lock(agv_pos_mutex_);
+        agv_pos_copy = latest_agv_pos_;
+    }
+    if (!agv_pos_copy.has_value()) {
+        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "obst_pcl";
     // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    render(msg, agv_service::msg::AgvPosition(), response);
+    response.points = processPointCloud(msg, agv_pos_copy.value());
     pub_app_data_->publish(response);
 }
 
 // 处理 障碍物多边形 数据流
 void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
+    std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
+    {
+        std::lock_guard<std::mutex> lock(agv_pos_mutex_);
+        agv_pos_copy = latest_agv_pos_;
+    }
+    if (!agv_pos_copy.has_value()) {
+        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "obst_polygon";
     // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    render(msg, agv_service::msg::AgvPosition(), response);
+    response.points = processPolygon(msg, agv_pos_copy.value());
     pub_app_data_->publish(response);
 }
 
 // 处理 模型多边形 数据流
 void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
+    std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
+    {
+        std::lock_guard<std::mutex> lock(agv_pos_mutex_);
+        agv_pos_copy = latest_agv_pos_;
+    }
+    if (!agv_pos_copy.has_value()) {
+        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "model_polygon";
     // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    render(msg, agv_service::msg::AgvPosition(), response);
+    response.points = processPolygon(msg, agv_pos_copy.value());
     pub_app_data_->publish(response);
 }
 
