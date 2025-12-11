@@ -301,8 +301,7 @@ void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "scan2pointcloud";
-    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    response.points = processPointCloud(msg, agv_pos_copy.value());
+    processPointCloud(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
 }
 
@@ -323,8 +322,7 @@ void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedP
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "obst_pcl";
-    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    response.points = processPointCloud(msg, agv_pos_copy.value());
+    processPointCloud(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
 }
 
@@ -345,8 +343,7 @@ void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "obst_polygon";
-    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    response.points = processPolygon(msg, agv_pos_copy.value());
+    processPolygon(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
 }
 
@@ -367,8 +364,7 @@ void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStampe
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
     response.command_type = "model_polygon";
-    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
-    response.points = processPolygon(msg, agv_pos_copy.value());
+    processPolygon(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
 }
 

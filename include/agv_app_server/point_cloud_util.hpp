@@ -60,10 +60,11 @@ namespace agv_app_server
     1. 先旋转
     2. 再平移
 */
-inline agv_app_msgs::msg::AppData::_points_type processPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr& input_cloud, const agv_service::msg::AgvPosition& agv_pos)
+inline void processPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr& input_cloud,
+    const agv_service::msg::AgvPosition& agv_pos,
+    std::vector<agv_app_msgs::msg::PointXyzi>& output_points)
 {
-    agv_app_msgs::msg::AppData::_points_type output_points;
-
+    output_points.clear();
     // 从AGV位姿创建平移向量和旋转矩阵
     const TranslationVector t = {agv_pos.x, agv_pos.y, agv_pos.z};
     const RotationMatrix rot = eulerAnglesToRotationMatrix(agv_pos.yaw, agv_pos.pitch, agv_pos.roll);
@@ -88,7 +89,7 @@ inline agv_app_msgs::msg::AppData::_points_type processPointCloud(const sensor_m
     }
     if (!has_x || !has_y || !has_z) {
         LogManager::getInstance().getLogger()->warn("PointCloud2 is invalid: missing x/y/z fields");
-        return output_points;
+        return;
     }
 
     // 预分配内存，避免 vector 动态扩容带来的性能开销
@@ -116,15 +117,16 @@ inline agv_app_msgs::msg::AppData::_points_type processPointCloud(const sensor_m
                                 .set__z(trans_point.z)
                                 .set__intensity(has_intensity ? *iter_intensity : 0.0f));
     }
-    return output_points;
 }
 
-inline agv_app_msgs::msg::AppData::_points_type processPolygon(const geometry_msgs::msg::PolygonStamped::SharedPtr& polygon_msg, const agv_service::msg::AgvPosition& agv_pos)
+inline void processPolygon(const geometry_msgs::msg::PolygonStamped::SharedPtr& polygon_msg,
+    const agv_service::msg::AgvPosition& agv_pos,
+    agv_app_msgs::msg::AppData::_points_type& output_points)
 {
+    output_points.clear();
+    // 从AGV位姿创建平移向量和旋转矩阵
     const TranslationVector t = {agv_pos.x, agv_pos.y, agv_pos.z};      // 平移向量
     const RotationMatrix rot = eulerAnglesToRotationMatrix(agv_pos.yaw, agv_pos.pitch, agv_pos.roll);   // 计算旋转矩阵
-
-    agv_app_msgs::msg::AppData::_points_type output_points;
     output_points.reserve(polygon_msg->polygon.points.size());
 
     for (const auto& p : polygon_msg->polygon.points) {
@@ -138,7 +140,6 @@ inline agv_app_msgs::msg::AppData::_points_type processPolygon(const geometry_ms
                                         .set__z(trans_point.z));
 
     }
-    return output_points;
 }
 
 }  // namespace agv_app_server
