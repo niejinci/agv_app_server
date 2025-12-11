@@ -3,6 +3,7 @@
 
 // 项目相关头文件
 #include "LogManager.hpp"
+#include "agv_app_server/point_cloud_util.hpp"
 
 // ros2 相关头文件
 #include "sensor_msgs/point_cloud2_iterator.hpp"
@@ -115,7 +116,7 @@ void AgvAppServer::register_data_stream_handlers()
     );
 
     // 7. 注册 qr_pos_data  - 二维码位置数据流
-    data_stream_handlers_["qr_pos_data"] = std::make_shared<DataStreamHandler<agv_service::msg::MCUToPC>>(
+    data_stream_handlers_["qr_pos_data"] = std::make_shared<DataStreamHandler<agv_service::msg::QrCameraData>>(
         this,
         "qr_pos_data",
         rclcpp::SystemDefaultsQoS(),
@@ -123,7 +124,7 @@ void AgvAppServer::register_data_stream_handlers()
     );
 
     // 8. 注册 qr_rack_data - 二维码货架数据流
-    data_stream_handlers_["qr_rack_data"] = std::make_shared<DataStreamHandler<agv_service::msg::MCUToPC>>(
+    data_stream_handlers_["qr_rack_data"] = std::make_shared<DataStreamHandler<agv_service::msg::QrCameraData>>(
         this,
         "qr_rack_data",
         rclcpp::SystemDefaultsQoS(),
@@ -193,9 +194,18 @@ void AgvAppServer::publish_cmd_response(const std::string & request_id, const st
     pub_app_data_->publish(response);
 }
 
-// 具体处理函数的实现示例
+// 处理 小车点云 数据流，发布频率限制为 5Hz
 void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+    rclcpp::Time now = this->now();
+
+    // 限制为 5Hz (即间隔 200ms)，如果距离上次处理不足 200ms，直接跳过
+    if ((now - last_process_time).seconds() < 0.2) {
+        return;
+    }
+    last_process_time = now;
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "point_cloud";
@@ -246,34 +256,106 @@ void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::Share
     pub_app_data_->publish(response);
 }
 
+// 处理位置信息数据流
+// locationInfo 发布频率 10hz
 void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo::SharedPtr msg)
 {
-
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "agv_position";
+    response.command_type = "locationInfo";
+    response.agv_position.set__x(msg->agv_position.x)
+                          .set__y(msg->agv_position.y)
+                          .set__z(msg->agv_position.z)
+                          .set__yaw(msg->agv_position.yaw)
+                          .set__pitch(msg->agv_position.pitch)
+                          .set__roll(msg->agv_position.roll)
+                          .set__map_id(msg->agv_position.map_id)
+                          .set__position_initialized(msg->agv_position.position_initialized)
+                          .set__map_description(msg->agv_position.map_description)
+                          .set__localization_score(std::round(msg->agv_position.localization_score * 10000) / 100)
+                          .set__deviation_range(msg->agv_position.deviation_range);
+    pub_app_data_->publish(response);
 }
 
+// 处理 避障点云 数据流
 void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "point_cloud";
+    response.command_type = "scan2pointcloud";
+    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
+    render(msg, agv_service::msg::AgvPosition(), response);
+    pub_app_data_->publish(response);
 }
+
+// 处理 障碍物点云 数据流
 void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "point_cloud";
+    response.command_type = "obst_pcl";
+    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
+    render(msg, agv_service::msg::AgvPosition(), response);
+    pub_app_data_->publish(response);
 }
+
+// 处理 障碍物多边形 数据流
 void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
-
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "point_cloud";
+    response.command_type = "obst_polygon";
+    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
+    render(msg, agv_service::msg::AgvPosition(), response);
+    pub_app_data_->publish(response);
 }
+
+// 处理 模型多边形 数据流
 void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
-
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "point_cloud";
+    response.command_type = "model_polygon";
+    // 实际的AGV位姿信息需要订阅 locationInfo 获取，例如: process_locationInfo，还没想好如何把获取的 AGV位姿信息 传递到这里， 这里暂时传入默认构造的对象
+    render(msg, agv_service::msg::AgvPosition(), response);
+    pub_app_data_->publish(response);
 }
-void AgvAppServer::process_qr_pos_data(const agv_service::msg::MCUToPC::SharedPtr msg)
-{
 
+// 处理二维码位置数据流
+void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::SharedPtr msg)
+{
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "qr_pos_data";
+    response.command_type = "qr_pos_data";
+    response.qr_pos_camera_data.set__stamp(msg->stamp)
+                                 .set__x(msg->x)
+                                 .set__y(msg->y)
+                                 .set__angle(msg->angle)
+                                 .set__tag_number(msg->tag_number)
+                                 .set__is_matrix(msg->is_matrix);
+    pub_app_data_->publish(response);
 }
-void AgvAppServer::process_qr_rack_data(const agv_service::msg::MCUToPC::SharedPtr msg)
-{
 
+// 处理二维码货架数据流
+void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::SharedPtr msg)
+{
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "qr_rack_data";
+    response.command_type = "qr_rack_data";
+    response.qr_rack_camera_data.set__stamp(msg->stamp)
+                                 .set__x(msg->x)
+                                 .set__y(msg->y)
+                                 .set__angle(msg->angle)
+                                 .set__tag_number(msg->tag_number)
+                                 .set__is_matrix(msg->is_matrix);
+    pub_app_data_->publish(response);
 }
 
 } // namespace agv_app_server

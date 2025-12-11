@@ -63,8 +63,8 @@ private:
     rclcpp::Subscription<agv_service::msg::SlamLocationInfo>::SharedPtr sub_location_info_;
     rclcpp::Subscription<agv_service::msg::MCUToPC>::SharedPtr sub_mcu_to_pc_;
     rclcpp::Subscription<agv_service::msg::SysInfo>::SharedPtr sub_sys_info_;
-    rclcpp::Subscription<agv_service::msg::MCUToPC>::SharedPtr sub_qr_pos_;
-    rclcpp::Subscription<agv_service::msg::MCUToPC>::SharedPtr sub_qr_rack_;
+    rclcpp::Subscription<agv_service::msg::QrCameraData>::SharedPtr sub_qr_pos_;
+    rclcpp::Subscription<agv_service::msg::QrCameraData>::SharedPtr sub_qr_rack_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_scan2pc_;
     rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_obst_polygon_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_obst_pcl_;
@@ -90,8 +90,8 @@ private:
     void process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void process_obst_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg);
     void process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg);
-    void process_qr_pos_data(const agv_service::msg::MCUToPC::SharedPtr msg);
-    void process_qr_rack_data(const agv_service::msg::MCUToPC::SharedPtr msg);
+    void process_qr_pos_data(const agv_service::msg::QrCameraData::SharedPtr msg);
+    void process_qr_rack_data(const agv_service::msg::QrCameraData::SharedPtr msg);
 
     // 外部请求的回调函数(app_request_topic)
     void handle_app_request(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
