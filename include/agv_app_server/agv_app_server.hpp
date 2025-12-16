@@ -15,6 +15,8 @@
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "agv_service/msg/mqtt_state.hpp"
 #include "agv_service/msg/state.hpp"
+#include "agv_service/msg/mcu_to_pc.hpp"
+#include "agv_service/msg/sys_info.hpp"
 
 // ros2 相关头文件
 #include "rclcpp/rclcpp.hpp"
@@ -92,6 +94,8 @@ private:
     void process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg);
     void process_qr_pos_data(const agv_service::msg::QrCameraData::SharedPtr msg);
     void process_qr_rack_data(const agv_service::msg::QrCameraData::SharedPtr msg);
+    void process_mcu_to_pc(const agv_service::msg::MCUToPC::SharedPtr msg);
+    void process_sys_info(const agv_service::msg::SysInfo::SharedPtr msg);
 
     // 外部请求的回调函数(app_request_topic)
     void handle_app_request(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
@@ -101,9 +105,15 @@ private:
 
     // 互斥锁
     std::mutex agv_pos_mutex_;
-
     // 默认构造时它是 nullopt (无值状态)
     std::optional<agv_service::msg::AgvPosition> latest_agv_pos_;
+
+    // 互斥锁
+    std::mutex agv_state_mutex_;
+    std::optional<agv_app_server::StateLite> latest_agv_state_lite_;
+
+    rclcpp::TimerBase::SharedPtr state_relate_timer_;
+    void state_relate_timer_cb();
 };
 
 } // namespace agv_app_server

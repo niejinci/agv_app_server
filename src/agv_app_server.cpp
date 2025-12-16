@@ -24,6 +24,30 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     pub_agv_instant_ = this->create_publisher<agv_service::msg::InstantActions>("agv_instant_topic", 10);
     register_instant_action_handlers();
 
+    // 3. 内部接口 (Subscribers)
+    // 小车状态信息必须订阅，因为很多即时动作需要根据当前操作模式决定是否允许执行
+    sub_agv_state_ = this->create_subscription<agv_service::msg::State>("agv_state_topic", 10,
+        [this](const agv_service::msg::State::SharedPtr msg) {
+            std::lock_guard<std::mutex> lock(agv_state_mutex_);
+            agv_app_server::StateLite state_lite;
+            state_lite.is_task_running = msg->is_task_running;
+            state_lite.edegs_empty = msg->edge_states.empty();
+            state_lite.order_id = msg->order_id;
+            state_lite.last_node_id = msg->last_node_id;
+            state_lite.last_node_sequence_id = msg->last_node_sequence_id;
+            state_lite.agv_position = msg->agv_position;
+            state_lite.node_states = msg->node_states;
+            state_lite.errors = msg->errors;
+            state_lite.operating_mode = msg->operating_mode;
+            state_lite.e_stop = msg->safety_state.e_stop;
+            latest_agv_state_lite_ = std::move(state_lite);
+        });
+
+    state_relate_timer_ = this->create_wall_timer(std::chrono::milliseconds(400), std::bind(&AgvAppServer::state_relate_timer_cb, this));
+
+    // 4. 注册数据流处理程序
+    register_data_stream_handlers();
+
     // pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
     // pub_mqtt_operate_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
 
@@ -31,6 +55,53 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
 }
 
 AgvAppServer::~AgvAppServer() {}
+
+
+void AgvAppServer::state_relate_timer_cb()
+{
+    std::optional<agv_app_server::StateLite> agv_state_lite_copy;
+    {
+        // 锁只保护共享资源的读写
+        std::lock_guard<std::mutex> lock(agv_state_mutex_);
+        agv_state_lite_copy = latest_agv_state_lite_;
+    }
+    if (!agv_state_lite_copy.has_value()) {
+        // LogManager::getInstance().getLogger()->warn("AGV state is not available yet. Skipping processing.");
+        return;
+    }
+
+    // 发布错误信息
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "state";
+    response.command_type = "errors";
+    for (const auto& item : agv_state_lite_copy.value().errors) {
+        response.errors.emplace_back(agv_app_msgs::msg::Error()
+                                    .set__error_type(item.error_type)
+                                    .set__error_description(item.error_description)
+                                    .set__error_hint(item.error_hint)
+                                    .set__error_level(item.error_level));
+    }
+    pub_app_data_->publish(response);
+
+    // 发布运行任务信息
+    response.errors.clear();
+    response.source_type = "state";
+    response.command_type = "running_task";
+    if (agv_state_lite_copy->is_task_running && !agv_state_lite_copy->edegs_empty) {
+        response.running_task.set__order_id(agv_state_lite_copy->order_id)
+                            .set__last_node_id(agv_state_lite_copy->last_node_id);
+
+        // 查找 next_node_id
+        int64_t next_node_id = agv_state_lite_copy->last_node_sequence_id + 2;
+        for (auto& node : agv_state_lite_copy->node_states) {
+            if (node.sequence_id == next_node_id) {
+                response.running_task.set__next_node_id(node.node_id);
+                break;
+            }
+        }
+    }
+    pub_app_data_->publish(response);
+}
 
 // 注册各种即时动作处理程序
 void AgvAppServer::register_instant_action_handlers()
@@ -131,6 +202,22 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_qr_rack_data, this, std::placeholders::_1)
     );
 
+    // 9. 注册 mcu_to_pc - MCU 到 PC 的数据流
+    data_stream_handlers_["mcu_to_pc"] = std::make_shared<DataStreamHandler<agv_service::msg::MCUToPC>>(
+        this,
+        "mcu_to_pc",
+        rclcpp::SystemDefaultsQoS(),
+        std::bind(&AgvAppServer::process_mcu_to_pc, this, std::placeholders::_1)
+    );
+
+    // 10. 注册 sys_info - 系统信息数据流
+    data_stream_handlers_["sys_info"] = std::make_shared<DataStreamHandler<agv_service::msg::SysInfo>>(
+        this,
+        "sys_info",
+        rclcpp::SystemDefaultsQoS(),
+        std::bind(&AgvAppServer::process_sys_info, this, std::placeholders::_1)
+    );
+
     LogManager::getInstance().getLogger()->info("All data stream handlers registered.");
 }
 
@@ -194,7 +281,7 @@ void AgvAppServer::publish_cmd_response(const std::string & request_id, const st
     pub_app_data_->publish(response);
 }
 
-// 处理 小车点云 数据流，发布频率限制为 5Hz
+// 处理 小车点云(稀疏，显示用) 数据流，发布频率限制为 5Hz
 void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
     static rclcpp::Time last_process_time(0);
@@ -208,7 +295,7 @@ void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::Share
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "point_cloud";
+    response.source_type = "data_stream";
     response.command_type = "filte_scan";
 
     bool has_intensity = false;
@@ -267,7 +354,7 @@ void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "agv_position";
+    response.source_type = "data_stream";
     response.command_type = "locationInfo";
     response.agv_position.set__x(msg->agv_position.x)
                           .set__y(msg->agv_position.y)
@@ -283,7 +370,7 @@ void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo
     pub_app_data_->publish(response);
 }
 
-// 处理 避障点云 数据流
+// 处理 小车点云(避障用)数据流
 void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
     std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
@@ -299,7 +386,7 @@ void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "point_cloud";
+    response.source_type = "data_stream";
     response.command_type = "scan2pointcloud";
     processPointCloud(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
@@ -320,7 +407,7 @@ void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedP
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "point_cloud";
+    response.source_type = "data_stream";
     response.command_type = "obst_pcl";
     processPointCloud(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
@@ -341,7 +428,7 @@ void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "point_cloud";
+    response.source_type = "data_stream";
     response.command_type = "obst_polygon";
     processPolygon(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
@@ -362,7 +449,7 @@ void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStampe
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "point_cloud";
+    response.source_type = "data_stream";
     response.command_type = "model_polygon";
     processPolygon(msg, agv_pos_copy.value(), response.points);
     pub_app_data_->publish(response);
@@ -373,7 +460,7 @@ void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::Sha
 {
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "qr_pos_data";
+    response.source_type = "data_stream";
     response.command_type = "qr_pos_data";
     response.qr_pos_camera_data.set__stamp(msg->stamp)
                                  .set__x(msg->x)
@@ -389,7 +476,7 @@ void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::Sh
 {
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
-    response.source_type = "qr_rack_data";
+    response.source_type = "data_stream";
     response.command_type = "qr_rack_data";
     response.qr_rack_camera_data.set__stamp(msg->stamp)
                                  .set__x(msg->x)
@@ -397,6 +484,120 @@ void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::Sh
                                  .set__angle(msg->angle)
                                  .set__tag_number(msg->tag_number)
                                  .set__is_matrix(msg->is_matrix);
+    pub_app_data_->publish(response);
+}
+
+// 发布频率 50hz
+void AgvAppServer::process_mcu_to_pc(const agv_service::msg::MCUToPC::SharedPtr msg)
+{
+    static uint32_t count{1};
+    if (count++ % 50) { // 降低发布频率：如果不能被50整除，则返回
+        return;
+    }
+
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "data_stream";
+    response.command_type = "mcu_to_pc";
+    response.mcu_data.battery.set__battery_charge(msg->battery_charge)
+                           .set__battery_voltage(msg->battery_voltage)
+                           .set__charging(msg->charging);
+
+    // 设置电机信息
+    response.mcu_data.left_servo.set__driver_state(msg->left_servo.driver_state)
+                           .set__encoder_data(msg->left_servo.encoder_data)
+                           .set__error_code(msg->left_servo.error_code)
+                           .set__time_gap(msg->left_servo.time_gap)
+                           .set__motor_speed(msg->left_servo.motor_speed);
+    response.mcu_data.right_servo.set__driver_state(msg->right_servo.driver_state)
+                           .set__encoder_data(msg->right_servo.encoder_data)
+                           .set__error_code(msg->right_servo.error_code)
+                           .set__time_gap(msg->right_servo.time_gap)
+                           .set__motor_speed(msg->right_servo.motor_speed);
+    response.mcu_data.lift_servo.set__driver_state(msg->lift_servo.driver_state)
+                           .set__encoder_data(msg->lift_servo.encoder_data)
+                           .set__error_code(msg->lift_servo.error_code)
+                           .set__time_gap(msg->lift_servo.time_gap)
+                           .set__motor_speed(msg->lift_servo.motor_speed);
+    response.mcu_data.rotation_servo.set__driver_state(msg->rotation_servo.driver_state)
+                           .set__encoder_data(msg->rotation_servo.encoder_data)
+                           .set__error_code(msg->rotation_servo.error_code)
+                           .set__time_gap(msg->rotation_servo.time_gap)
+                           .set__motor_speed(msg->rotation_servo.motor_speed);
+
+    // 设置GPIO输入位
+    response.mcu_data.gpio_input_bits.reserve(24);
+    for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_input_bits.emplace_back((msg->gpio_input_1 >> i) & 0x01);
+    }
+    for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_input_bits.emplace_back((msg->gpio_input_2 >> i) & 0x01);
+    }
+        for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_input_bits.emplace_back((msg->gpio_input_3 >> i) & 0x01);
+    }
+
+    // 设置GPIO输出位
+    response.mcu_data.gpio_output_bits.reserve(24);
+    for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_output_bits.emplace_back((msg->output_1 >> i) & 0x01);
+    }
+    for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_output_bits.emplace_back((msg->output_2 >> i) & 0x01);
+    }
+        for (uint32_t i = 0; i < 8 * sizeof(uint8_t); i++) {
+        response.mcu_data.gpio_output_bits.emplace_back((msg->output_3 >> i) & 0x01);
+    }
+    pub_app_data_->publish(response);
+}
+
+// 发布频率 1hz
+void AgvAppServer::process_sys_info(const agv_service::msg::SysInfo::SharedPtr msg)
+{
+    // 构造 AppData 并发布
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "data_stream";
+    response.command_type = "sys_info";
+
+    // 版本信息
+    response.sys_info.version.set__firmware_ver(msg->firmware_ver)
+                      .set__map_ver(msg->map_ver)
+                      .set__model_ver(msg->model_ver)
+                      .set__robot_id(msg->robot_id)
+                      .set__robot_name(msg->robot_name)
+                      .set__robot_type(msg->robot_type)
+                      .set__sensor_ver(msg->sensor_ver);
+
+    // 系统资源
+    response.sys_info.resource.set__cpu(msg->cpu)
+        .set__idle(msg->idle)
+        .set__mem(msg->mem)
+        .set__mem_unused(msg->mem_unused)
+        .set__mem_used(msg->mem_used)
+        .set__swapd(msg->swapd)
+        .set__temp(msg->temp);
+
+    // 进程列表信息
+    response.sys_info.process_infos.reserve(msg->process_infos.size());
+    for (const auto& item : msg->process_infos) {
+        agv_app_msgs::msg::ProcessInfo process_info;
+        process_info.pid = item.pid;
+        process_info.name = item.name;
+        process_info.cpu = item.cpu;
+        process_info.mem = item.mem;
+        process_info.rss = item.rss;
+        process_info.vss = item.vss;
+        process_info.pss = item.pss;
+        process_info.threads = item.threads;
+        process_info.fds = item.fds;
+        process_info.cswch = item.cswch;
+        process_info.nvcswch = item.nvcswch;
+        process_info.model_ver = item.model_ver;
+        process_info.state = item.state;
+        process_info.us = item.us;
+        process_info.sy = item.sy;
+        response.sys_info.process_infos.emplace_back(std::move(process_info));
+    }
     pub_app_data_->publish(response);
 }
 

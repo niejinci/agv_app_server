@@ -5,11 +5,28 @@
 #include <memory>
 #include <functional>
 
+#include "agv_service/msg/agv_position.hpp"
+#include "agv_service/msg/node_state.hpp"
+#include "agv_service/msg/error.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "LogManager.hpp"
 
 namespace agv_app_server
 {
+
+struct StateLite
+{
+    bool is_task_running = false;
+    bool edegs_empty = false;
+    std::string order_id;
+    std::string last_node_id;
+    int64_t last_node_sequence_id;
+    agv_service::msg::AgvPosition agv_position;
+    std::vector<agv_service::msg::NodeState> node_states;
+    std::vector<agv_service::msg::Error> errors;
+    std::string operating_mode;
+    std::string e_stop;
+};
 
 /**
  * @brief 数据流处理器的抽象基类
