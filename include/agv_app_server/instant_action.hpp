@@ -46,7 +46,8 @@ class BaseInstantActionHandler
 {
 public:
     BaseInstantActionHandler(rclcpp::Publisher<agv_service::msg::InstantActions>::SharedPtr instantPublisher = nullptr,
-        rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr appDataPublisher = nullptr);
+        rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr appDataPublisher = nullptr,
+        std::function<std::string()> get_mode_func = nullptr);
     ~BaseInstantActionHandler() = default;
     virtual void handle(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
 
@@ -70,6 +71,9 @@ private:
     int headId_;
     rclcpp::Publisher< agv_service::msg::InstantActions >::SharedPtr instantPublisher_;
     rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr appDataPublisher_;
+
+protected:
+    std::function<std::string()> get_mode_func_;
 };
 
 //重定位
@@ -225,6 +229,19 @@ public:
 protected:
     virtual std::string get_action_type() const override { return "resetAgv";}
     virtual std::string get_action_description() const override { return "软复位";}
+};
+
+
+//设置操作模式
+class SetOperatingModeHandler : public BaseInstantActionHandler
+{
+public:
+    using BaseInstantActionHandler::BaseInstantActionHandler;
+
+    virtual Result validate_args(const agv_app_msgs::msg::AppRequest::SharedPtr msg) const override;
+    virtual std::string get_action_type() const override { return "controlMode";}
+    virtual std::string get_action_description() const override { return "设置操作模式";}
+    virtual void create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)  override;
 };
 
 }  // namespace agv_app_server

@@ -106,34 +106,40 @@ void AgvAppServer::state_relate_timer_cb()
 // 注册各种即时动作处理程序
 void AgvAppServer::register_instant_action_handlers()
 {
+    auto get_mode_func = [this]() -> std::string {
+        std::lock_guard<std::mutex> lock(agv_state_mutex_);
+        if (latest_agv_state_lite_.has_value()) {
+            return latest_agv_state_lite_->operating_mode;
+        }
+        return "UNkNOWN";
+    };
+
     // 1. RelocationHandler
-    instant_action_handlers_["RELOCATION"] = std::make_shared<RelocationHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["RELOCATION"] = std::make_shared<RelocationHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 2. TranslationHandler
-    instant_action_handlers_["TRANSLATION"] = std::make_shared<TranslationHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["TRANSLATION"] = std::make_shared<TranslationHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 3. RotationHandler
-    instant_action_handlers_["ROTATION"] = std::make_shared<RotationHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["ROTATION"] = std::make_shared<RotationHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 4. PalletRotationHandler
-    instant_action_handlers_["PALLET_ROTATION"] = std::make_shared<PalletRotationHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["PALLET_ROTATION"] = std::make_shared<PalletRotationHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 5. LiftingHandler
-    instant_action_handlers_["LIFTING"] = std::make_shared<LiftingHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["LIFTING"] = std::make_shared<LiftingHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 6. CancelTaskHandler
-    instant_action_handlers_["CANCEL_TASK"] = std::make_shared<CancelTaskHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["CANCEL_TASK"] = std::make_shared<CancelTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 7. PauseTaskHandler
-    instant_action_handlers_["PAUSE_TASK"] = std::make_shared<PauseTaskHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["PAUSE_TASK"] = std::make_shared<PauseTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 8. ResumeTaskHandler
-    instant_action_handlers_["RESUME_TASK"] = std::make_shared<ResumeTaskHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["RESUME_TASK"] = std::make_shared<ResumeTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 9. RemoteControlHandler
-    instant_action_handlers_["REMOTE_CONTROL"] = std::make_shared<RemoteControlHandler>(pub_agv_instant_, pub_app_data_);
+    instant_action_handlers_["REMOTE_CONTROL"] = std::make_shared<RemoteControlHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 10. EmergencyStopHandler
     instant_action_handlers_["EMERGENCY_STOP"] = std::make_shared<EmergencyStopHandler>(pub_agv_instant_, pub_app_data_);
     // 11. ClearErrorsHandler
     instant_action_handlers_["CLEAR_ERRORS"] = std::make_shared<ClearErrorsHandler>(pub_agv_instant_, pub_app_data_);
     // 12. SoftResetHandler
     instant_action_handlers_["SOFT_RESET"] = std::make_shared<SoftResetHandler>(pub_agv_instant_, pub_app_data_);
-    // 13. ClearErrorsHandler
-    instant_action_handlers_["CLEAR_ERRORS"] = std::make_shared<ClearErrorsHandler>(pub_agv_instant_, pub_app_data_);
-    // 14. SoftResetHandler
-    instant_action_handlers_["SOFT_RESET"] = std::make_shared<SoftResetHandler>(pub_agv_instant_, pub_app_data_);
+    // 13. SetOperatingModeHandler
+    instant_action_handlers_["SET_OPERATING_MODE"] = std::make_shared<SetOperatingModeHandler>(pub_agv_instant_, pub_app_data_);
 }
 
 void AgvAppServer::register_data_stream_handlers()
