@@ -144,7 +144,7 @@ void AgvAppServer::register_instant_action_handlers()
 
 void AgvAppServer::register_data_stream_handlers()
 {
-    // 1. 注册 filte_scan - 点云数据流
+    // 1. 注册 filte_scan - 点云数据流， 20hz
     data_stream_handlers_["filte_scan"] = std::make_shared<DataStreamHandler<sensor_msgs::msg::PointCloud2>>(
         this,
         "filte_scan",
@@ -152,7 +152,7 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_filte_scan, this, std::placeholders::_1)
     );
 
-    // 2. 注册 locationInfo - 位置信息数据流
+    // 2. 注册 locationInfo - 位置信息数据流，20hz
     data_stream_handlers_["locationInfo"] = std::make_shared<DataStreamHandler<agv_service::msg::SlamLocationInfo>>(
         this,
         "locationInfo",
@@ -160,7 +160,7 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_locationInfo, this, std::placeholders::_1)
     );
 
-    // 3. 注册 scan2pointcloud - 点云数据流
+    // 3. 注册 scan2pointcloud - 点云数据流, 20hz
     data_stream_handlers_["scan2pointcloud"] = std::make_shared<DataStreamHandler<sensor_msgs::msg::PointCloud2>>(
         this,
         "scan2pointcloud",
@@ -208,7 +208,7 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_qr_rack_data, this, std::placeholders::_1)
     );
 
-    // 9. 注册 mcu_to_pc - MCU 到 PC 的数据流
+    // 9. 注册 mcu_to_pc - MCU 到 PC 的数据流， 50hz
     data_stream_handlers_["mcu_to_pc"] = std::make_shared<DataStreamHandler<agv_service::msg::MCUToPC>>(
         this,
         "mcu_to_pc",
@@ -216,7 +216,7 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_mcu_to_pc, this, std::placeholders::_1)
     );
 
-    // 10. 注册 sys_info - 系统信息数据流
+    // 10. 注册 sys_info - 系统信息数据流, 1hz
     data_stream_handlers_["sys_info"] = std::make_shared<DataStreamHandler<agv_service::msg::SysInfo>>(
         this,
         "sys_info",
@@ -291,13 +291,11 @@ void AgvAppServer::publish_cmd_response(const std::string & request_id, const st
 void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
     static rclcpp::Time last_process_time(0);
-    rclcpp::Time now = this->now();
 
-    // 限制为 5Hz (即间隔 200ms)，如果距离上次处理不足 200ms，直接跳过
-    if ((now - last_process_time).seconds() < 0.2) {
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
         return;
     }
-    last_process_time = now;
 
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
@@ -350,9 +348,15 @@ void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::Share
 }
 
 // 处理位置信息数据流
-// locationInfo 发布频率 10hz
 void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     {
         std::lock_guard<std::mutex> lock(agv_pos_mutex_);
         latest_agv_pos_ = msg->agv_position;
@@ -379,6 +383,13 @@ void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo
 // 处理 小车点云(避障用)数据流
 void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
     {
         // 锁只保护共享资源的读写
@@ -401,6 +412,13 @@ void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::
 // 处理 障碍物点云 数据流
 void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
     {
         std::lock_guard<std::mutex> lock(agv_pos_mutex_);
@@ -422,6 +440,13 @@ void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedP
 // 处理 障碍物多边形 数据流
 void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
     {
         std::lock_guard<std::mutex> lock(agv_pos_mutex_);
@@ -443,6 +468,13 @@ void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped
 // 处理 模型多边形 数据流
 void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     std::optional<agv_service::msg::AgvPosition> agv_pos_copy;
     {
         std::lock_guard<std::mutex> lock(agv_pos_mutex_);
@@ -464,6 +496,13 @@ void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStampe
 // 处理二维码位置数据流
 void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "data_stream";
@@ -480,6 +519,13 @@ void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::Sha
 // 处理二维码货架数据流
 void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::SharedPtr msg)
 {
+    static rclcpp::Time last_process_time(0);
+
+    // 检查频率限制 (5Hz = 0.2s)
+    if (!should_process(last_process_time, 0.2)) {
+        return;
+    }
+
     // 构造 AppData 并发布
     agv_app_msgs::msg::AppData response;
     response.source_type = "data_stream";
@@ -497,7 +543,7 @@ void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::Sh
 void AgvAppServer::process_mcu_to_pc(const agv_service::msg::MCUToPC::SharedPtr msg)
 {
     static uint32_t count{1};
-    if (count++ % 50) { // 降低发布频率：如果不能被50整除，则返回
+    if (count++ % 50) { // 降低发布频率到1hz：如果不能被50整除，则返回
         return;
     }
 
@@ -605,6 +651,25 @@ void AgvAppServer::process_sys_info(const agv_service::msg::SysInfo::SharedPtr m
         response.sys_info.process_infos.emplace_back(std::move(process_info));
     }
     pub_app_data_->publish(response);
+}
+
+/**
+ * @brief 检查自上次处理后是否过了足够的时间
+ * 如果满足时间间隔，则更新 last_process_time 并返回 true，否则返回 false
+ *
+ * @param last_time 指向存储上一次处理时间的变量的引用
+ * @param interval_seconds 时间间隔，单位为秒
+ * @return true 如果满足时间间隔，允许处理
+ * @return false 调用频率过高，跳过此次处理
+ */
+bool AgvAppServer::should_process(rclcpp::Time& last_time, double interval_seconds)
+{
+    rclcpp::Time now = this->now();
+    if ((now - last_time).seconds() < interval_seconds) {
+        return false;
+    }
+    last_time = now;
+    return true;
 }
 
 } // namespace agv_app_server

@@ -112,8 +112,13 @@ private:
     std::mutex agv_state_mutex_;
     std::optional<agv_app_server::StateLite> latest_agv_state_lite_;
 
+    // 状态相关处理
     rclcpp::TimerBase::SharedPtr state_relate_timer_;
     void state_relate_timer_cb();
+
+    // 检查自上次处理后是否过了足够的时间
+    // 如果满足时间间隔，则更新 last_process_time 并返回 true，否则返回 false
+    bool should_process(rclcpp::Time& last_time, double interval_seconds);
 };
 
 } // namespace agv_app_server
