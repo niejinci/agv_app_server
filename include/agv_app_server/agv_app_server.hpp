@@ -2,6 +2,7 @@
 #define AGV_APP_SERVER__AGV_APP_SERVER_HPP_
 
 #include "agv_app_server/data_stream_handler.hpp"
+#include "agv_app_server/state_timer.hpp"
 
 // 引入 AGV 相关消息
 // 内部发布/订阅使用
@@ -17,6 +18,7 @@
 #include "agv_service/msg/state.hpp"
 #include "agv_service/msg/mcu_to_pc.hpp"
 #include "agv_service/msg/sys_info.hpp"
+#include "agv_service/msg/mqtt_state.hpp"
 
 // ros2 相关头文件
 #include "rclcpp/rclcpp.hpp"
@@ -71,6 +73,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_obst_polygon_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_obst_pcl_;
     rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_model_polygon_;
+    rclcpp::Subscription<agv_service::msg::MqttState>::SharedPtr mqtt_state_;
 
     // 即时动作管理
     // 注册各种即时动作处理程序
@@ -108,13 +111,23 @@ private:
     // 默认构造时它是 nullopt (无值状态)
     std::optional<agv_service::msg::AgvPosition> latest_agv_pos_;
 
-    // 互斥锁
+    // 状态相关处理
+    void state_relate_timer_cb();
+    void register_state_timer();
+    void mqtt_state_timer_cb();
+    std::map<std::string, std::shared_ptr<StateTimer>> state_timers_;
+
+    // 小车状态
     std::mutex agv_state_mutex_;
     std::optional<agv_app_server::StateLite> latest_agv_state_lite_;
 
-    // 状态相关处理
-    rclcpp::TimerBase::SharedPtr state_relate_timer_;
-    void state_relate_timer_cb();
+    // rcs连接状态
+    std::mutex mqtt_state_mutex_;
+    std::optional<agv_service::msg::MqttState> latest_mqtt_state_;
+
+    // rcs 上下线处理
+    rclcpp::Publisher<agv_service::msg::MqttState>::SharedPtr mqtt_state_publisher_;
+    void set_rcs_online(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
 
     // 检查自上次处理后是否过了足够的时间
     // 如果满足时间间隔，则更新 last_process_time 并返回 true，否则返回 false

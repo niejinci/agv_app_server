@@ -43,7 +43,17 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             latest_agv_state_lite_ = std::move(state_lite);
         });
 
-    state_relate_timer_ = this->create_wall_timer(std::chrono::milliseconds(400), std::bind(&AgvAppServer::state_relate_timer_cb, this));
+    // 订阅连接rcs的状态
+    mqtt_state_ = this->create_subscription<agv_service::msg::MqttState>("mqtt_state_topic", 10,
+                            [this](const agv_service::msg::MqttState::SharedPtr msg) {
+                                std::lock_guard<std::mutex> lock(mqtt_state_mutex_);
+                                latest_mqtt_state_ = *msg;
+                            });
+    // 5. mqtt
+    mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
+
+    // 注册状态定时器
+    register_state_timer();
 
     // 4. 注册数据流处理程序
     register_data_stream_handlers();
@@ -56,6 +66,43 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
 
 AgvAppServer::~AgvAppServer() {}
 
+void AgvAppServer::register_state_timer()
+{
+    state_timers_["agv_state_topic"] = std::make_shared<StateTimer>(
+        this,
+        "agv_state_topic",
+        std::chrono::milliseconds(400),
+        std::bind(&AgvAppServer::state_relate_timer_cb, this)
+    );
+
+    state_timers_["mqtt_state_topic"] = std::make_shared<StateTimer>(
+        this,
+        "mqtt_state_topic",
+        std::chrono::milliseconds(2000),
+        std::bind(&AgvAppServer::mqtt_state_timer_cb, this)
+    );
+}
+
+void AgvAppServer::mqtt_state_timer_cb()
+{
+    std::optional<agv_service::msg::MqttState> mqtt_state_copy;
+    {
+        // 锁只保护共享资源的读写
+        std::lock_guard<std::mutex> lock(mqtt_state_mutex_);
+        mqtt_state_copy = latest_mqtt_state_;
+    }
+    if (!mqtt_state_copy.has_value()) {
+       //LogManager::getInstance().getLogger()->warn("MQTT state is not available yet. Skipping processing.");
+        return;
+    }
+
+    // 发布 MQTT 状态信息
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "state";
+    response.command_type = "mqtt_state_topic";
+    response.mqtt_state.online = mqtt_state_copy->online;
+    pub_app_data_->publish(response);
+}
 
 void AgvAppServer::state_relate_timer_cb()
 {
@@ -257,9 +304,27 @@ void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::Share
                 response_msg = "Invalid action. Use start/stop.";
             }
         } else {
-            success = false;
-            response_msg = "Unknown data stream: " + topic;
+            // 状态定时器也在这里控制打开和关闭
+            auto it2 = state_timers_.find(topic);
+            if (it2 != state_timers_.end()) {
+                if (action == "start") {
+                    it2->second->start();
+                    response_msg = "Started stream: " + topic;
+                } else if (action == "stop") {
+                    it2->second->stop();
+                    response_msg = "Stopped stream: " + topic;
+                } else {
+                    success = false;
+                    response_msg = "Invalid action. Use start/stop.";
+                }
+            } else {
+                success = false;
+                response_msg = "Unknown data stream: " + topic;
+            }
         }
+    } else if (msg->command_type == "SET_RCS_ONLINE") {
+        set_rcs_online(msg);
+        response_msg = "RCS online state set to: " + std::to_string(msg->mqtt_state.online);
     } else {
         success = false;
         response_msg = "Unknown command type";
@@ -670,6 +735,13 @@ bool AgvAppServer::should_process(rclcpp::Time& last_time, double interval_secon
     }
     last_time = now;
     return true;
+}
+
+void AgvAppServer::set_rcs_online(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
+{
+    agv_service::msg::MqttState mqtt_state;
+    mqtt_state.online = msg->mqtt_state.online;
+    mqtt_state_publisher_->publish(mqtt_state);
 }
 
 } // namespace agv_app_server
