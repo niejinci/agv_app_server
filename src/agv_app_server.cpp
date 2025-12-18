@@ -44,12 +44,16 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             latest_agv_state_lite_ = std::move(state_lite);
         });
 
-    // 订阅连接rcs的状态
+    // 订阅连接rcs的状态，主题发布频率: 1/3hz = 3s
     mqtt_state_ = this->create_subscription<agv_service::msg::MqttState>("mqtt_state_topic", 10,
                             [this](const agv_service::msg::MqttState::SharedPtr msg) {
-                                std::lock_guard<std::mutex> lock(mqtt_state_mutex_);
-                                latest_mqtt_state_ = *msg;
-                                LogManager::getInstance().getLogger()->info("Received MQTT state update.{}", msg->online);
+                                mqtt_state_online_.store(msg->online, std::memory_order_release);
+
+                                // 日志限频 (使用 atomic 保证线程安全)
+                                static std::atomic<uint32_t> count{0};
+                                // 20 次打印一次
+                                if (count.fetch_add(1) % 20 != 0) return;
+                                LogManager::getInstance().getLogger()->info("Received MQTT state update: {}", msg->online);
                             });
     // 5. mqtt
     mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
@@ -80,29 +84,18 @@ void AgvAppServer::register_state_timer()
     state_timers_["mqtt_state_topic"] = std::make_shared<StateTimer>(
         this,
         "mqtt_state_topic",
-        std::chrono::milliseconds(2000),
+        std::chrono::milliseconds(3000),    // mqtt_state_topic 3s 才发布一次，这里也3秒发布一次
         std::bind(&AgvAppServer::mqtt_state_timer_cb, this)
     );
 }
 
 void AgvAppServer::mqtt_state_timer_cb()
 {
-    std::optional<agv_service::msg::MqttState> mqtt_state_copy;
-    {
-        // 锁只保护共享资源的读写
-        std::lock_guard<std::mutex> lock(mqtt_state_mutex_);
-        mqtt_state_copy = latest_mqtt_state_;
-    }
-    if (!mqtt_state_copy.has_value()) {
-        //LogManager::getInstance().getLogger()->warn("MQTT state is not available yet. Skipping processing.");
-        return;
-    }
-
     // 发布 MQTT 状态信息
     agv_app_msgs::msg::AppData response;
     response.source_type = "state";
     response.command_type = "mqtt_state_topic";
-    response.mqtt_state.online = mqtt_state_copy->online;
+    response.mqtt_state.online = mqtt_state_online_.load(std::memory_order_acquire);
     pub_app_data_->publish(response);
 }
 
@@ -362,7 +355,10 @@ void AgvAppServer::publish_cmd_response(const std::string & request_id, const st
 // 处理 小车点云(稀疏，显示用) 数据流，发布频率限制为 5Hz
 void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    // rclcpp::Time 默认构造的时间类型是 RCL_SYSTEM_TIME (Type 2)
+    // this->now() 返回的时间类型是 RCL_ROS_TIME  (Type 1)
+    // 两者不能直接比较，需要统一类型
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -422,7 +418,7 @@ void AgvAppServer::process_filte_scan(const sensor_msgs::msg::PointCloud2::Share
 // 处理位置信息数据流
 void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -455,7 +451,7 @@ void AgvAppServer::process_locationInfo(const agv_service::msg::SlamLocationInfo
 // 处理 小车点云(避障用)数据流
 void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -484,7 +480,7 @@ void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::
 // 处理 障碍物点云 数据流
 void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -512,7 +508,7 @@ void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedP
 // 处理 障碍物多边形 数据流
 void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -540,7 +536,7 @@ void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped
 // 处理 模型多边形 数据流
 void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -568,7 +564,7 @@ void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStampe
 // 处理二维码位置数据流
 void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {
@@ -591,7 +587,7 @@ void AgvAppServer::process_qr_pos_data(const agv_service::msg::QrCameraData::Sha
 // 处理二维码货架数据流
 void AgvAppServer::process_qr_rack_data(const agv_service::msg::QrCameraData::SharedPtr msg)
 {
-    static rclcpp::Time last_process_time(0);
+    static rclcpp::Time last_process_time(0, 0, RCL_ROS_TIME);
 
     // 检查频率限制 (5Hz = 0.2s)
     if (!should_process(last_process_time, 0.2)) {

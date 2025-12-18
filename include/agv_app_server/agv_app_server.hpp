@@ -36,6 +36,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <atomic>
 
 // JSON 支持
 #include <nlohmann/json.hpp>
@@ -122,8 +123,7 @@ private:
     std::optional<agv_app_server::StateLite> latest_agv_state_lite_;
 
     // rcs连接状态
-    std::mutex mqtt_state_mutex_;
-    std::optional<agv_service::msg::MqttState> latest_mqtt_state_;
+    std::atomic<bool> mqtt_state_online_{false};
 
     // rcs 上下线处理
     rclcpp::Publisher<agv_service::msg::MqttState>::SharedPtr mqtt_state_publisher_;
