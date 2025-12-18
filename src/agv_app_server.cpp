@@ -4,6 +4,7 @@
 // 项目相关头文件
 #include "LogManager.hpp"
 #include "agv_app_server/point_cloud_util.hpp"
+#include "agv_app_msgs/msg/operating_mode.hpp"
 
 // ros2 相关头文件
 #include "sensor_msgs/point_cloud2_iterator.hpp"
@@ -48,6 +49,7 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
                             [this](const agv_service::msg::MqttState::SharedPtr msg) {
                                 std::lock_guard<std::mutex> lock(mqtt_state_mutex_);
                                 latest_mqtt_state_ = *msg;
+                                LogManager::getInstance().getLogger()->info("Received MQTT state update.{}", msg->online);
                             });
     // 5. mqtt
     mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
@@ -92,7 +94,7 @@ void AgvAppServer::mqtt_state_timer_cb()
         mqtt_state_copy = latest_mqtt_state_;
     }
     if (!mqtt_state_copy.has_value()) {
-       //LogManager::getInstance().getLogger()->warn("MQTT state is not available yet. Skipping processing.");
+        //LogManager::getInstance().getLogger()->warn("MQTT state is not available yet. Skipping processing.");
         return;
     }
 
@@ -280,6 +282,11 @@ void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::Share
     auto handler = instant_action_handlers_.find(msg->command_type);
     if (handler != instant_action_handlers_.end()) {
         handler->second->handle(msg);
+        return;
+    }
+
+    if (msg->command_type == "GET_OPERATING_MODE") {
+        get_operating_mode(msg);
         return;
     }
 
@@ -742,6 +749,27 @@ void AgvAppServer::set_rcs_online(const agv_app_msgs::msg::AppRequest::SharedPtr
     agv_service::msg::MqttState mqtt_state;
     mqtt_state.online = msg->mqtt_state.online;
     mqtt_state_publisher_->publish(mqtt_state);
+}
+
+void AgvAppServer::get_operating_mode(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
+{
+    agv_app_msgs::msg::AppData response;
+    response.source_type = "cmd_response";
+    response.request_id = msg->request_id;
+    response.command_type = msg->command_type;
+    response.success = true;
+    response.message = "Operating mode retrieved successfully";
+
+    {
+        std::lock_guard<std::mutex> lock(agv_state_mutex_);
+        if (latest_agv_state_lite_.has_value()) {
+            response.operating_mode.mode = latest_agv_state_lite_->operating_mode;
+        } else {
+            response.operating_mode.mode = agv_app_msgs::msg::OperatingMode::AUTOMATIC;
+        }
+    }
+
+    pub_app_data_->publish(response);
 }
 
 } // namespace agv_app_server

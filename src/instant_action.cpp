@@ -15,7 +15,7 @@
 #include "agv_app_msgs/msg/pallet_rotation.hpp"
 #include "agv_app_msgs/msg/lifting.hpp"
 #include "agv_app_server/instant_action.hpp"
-#include "agv_app_msgs/msg/set_operating_mode.hpp"
+#include "agv_app_msgs/msg/operating_mode.hpp"
 
 namespace agv_app_server
 {
@@ -149,7 +149,7 @@ Result RelocationHandler::validate_args(const agv_app_msgs::msg::AppRequest::Sha
 bool RelocationHandler::check_operating_mode() const
 {
     // 抢占模式下才能发送重定位操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void RelocationHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -173,7 +173,7 @@ Result TranslationHandler::validate_args(const agv_app_msgs::msg::AppRequest::Sh
 bool TranslationHandler::check_operating_mode() const
 {
     // 抢占模式下才能发送平动操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 void TranslationHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
 {
@@ -195,7 +195,7 @@ Result RotationHandler::validate_args(const agv_app_msgs::msg::AppRequest::Share
 bool RotationHandler::check_operating_mode() const
 {
     // 抢占模式下才能发送平动操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void RotationHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -220,7 +220,7 @@ Result PalletRotationHandler::validate_args(const agv_app_msgs::msg::AppRequest:
 bool PalletRotationHandler::check_operating_mode() const
 {
     // 示教/手动模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void PalletRotationHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -241,7 +241,7 @@ Result LiftingHandler::validate_args(const agv_app_msgs::msg::AppRequest::Shared
 bool LiftingHandler::check_operating_mode() const
 {
     // 示教/手动模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void LiftingHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -254,7 +254,7 @@ void LiftingHandler::create_action_parameters(const agv_app_msgs::msg::AppReques
 bool CancelTaskHandler::check_operating_mode() const
 {
     // 抢占了模式/示教模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL || get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::TEACHING);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL || get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING);
 }
 
 void CancelTaskHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -275,21 +275,21 @@ void CancelTaskHandler::after_instant_action_sent()
 bool PauseTaskHandler::check_operating_mode() const
 {
     // 抢占了模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 //恢复任务
 bool ResumeTaskHandler::check_operating_mode() const
 {
     // 抢占了模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 // 遥控小车
 bool RemoteControlHandler::check_operating_mode() const
 {
     // 示教模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::SetOperatingMode::TEACHING);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING);
 }
 
 void RemoteControlHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -308,12 +308,12 @@ void EmergencyStopHandler::create_action_parameters(const agv_app_msgs::msg::App
 // 设置操作模式
 Result SetOperatingModeHandler::validate_args(const agv_app_msgs::msg::AppRequest::SharedPtr msg) const
 {
-    auto mode = msg->set_operating_mode.mode;
-    if (mode != agv_app_msgs::msg::SetOperatingMode::AUTOMATIC &&
-        mode != agv_app_msgs::msg::SetOperatingMode::SEMIAUTOMATIC &&
-        mode != agv_app_msgs::msg::SetOperatingMode::MANUAL &&
-        mode != agv_app_msgs::msg::SetOperatingMode::SERVICE &&
-        mode != agv_app_msgs::msg::SetOperatingMode::TEACHING) {
+    auto mode = msg->operating_mode.mode;
+    if (mode != agv_app_msgs::msg::OperatingMode::AUTOMATIC &&
+        mode != agv_app_msgs::msg::OperatingMode::SEMIAUTOMATIC &&
+        mode != agv_app_msgs::msg::OperatingMode::MANUAL &&
+        mode != agv_app_msgs::msg::OperatingMode::SERVICE &&
+        mode != agv_app_msgs::msg::OperatingMode::TEACHING) {
         return Result::fail("invalid mode, must be `AUTOMATIC`, `SEMIAUTOMATIC`, `MANUAL`, `SERVICE`, or `TEACHING`");
     }
     return Result::ok();
@@ -321,7 +321,7 @@ Result SetOperatingModeHandler::validate_args(const agv_app_msgs::msg::AppReques
 
 void SetOperatingModeHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
 {
-    action.action_parameters.push_back(set_action_parameter("mode", msg->set_operating_mode.mode));
+    action.action_parameters.push_back(set_action_parameter("mode", msg->operating_mode.mode));
 }
 
 

@@ -132,6 +132,8 @@ private:
     // 检查自上次处理后是否过了足够的时间
     // 如果满足时间间隔，则更新 last_process_time 并返回 true，否则返回 false
     bool should_process(rclcpp::Time& last_time, double interval_seconds);
+
+    void get_operating_mode(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
 };
 
 } // namespace agv_app_server
