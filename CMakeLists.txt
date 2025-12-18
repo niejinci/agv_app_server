@@ -63,8 +63,12 @@ install(TARGETS ${PROJECT_NAME}_lib ${PROJECT_NAME}_node
 )
 
 install(TARGETS
-  ${PROJECT_NAME}_lib ${PROJECT_NAME}_node
+  ${PROJECT_NAME}_node
   DESTINATION /home/byd/node/agv_app_server/bin/)
+
+install(TARGETS
+  ${PROJECT_NAME}_lib
+  DESTINATION /home/byd/lib/)
 
 # 把源码目录中 include/ 文件夹下的所有内容（通常是 .hpp 头文件），递归地复制到安装目录的 include/ 路径下（即 ${CMAKE_INSTALL_PREFIX}/include）
 install(DIRECTORY include/
