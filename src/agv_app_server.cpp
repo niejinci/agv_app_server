@@ -19,7 +19,7 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     sub_app_request_ = this->create_subscription<agv_app_msgs::msg::AppRequest>("app_request_topic", 10,
         std::bind(&AgvAppServer::handle_app_request, this, std::placeholders::_1));
 
-    pub_app_data_ = this->create_publisher<agv_app_msgs::msg::AppData>("app_data_topic", 10);
+    pub_app_data_ = this->create_publisher<agv_app_msgs::msg::AppData>("app_data_topic", 50);
 
     // 2. 内部接口 (Publishers)
     pub_agv_instant_ = this->create_publisher<agv_service::msg::InstantActions>("agv_instant_topic", 10);
@@ -112,10 +112,10 @@ void AgvAppServer::state_relate_timer_cb()
         return;
     }
 
-    // 发布错误信息
+    // 填充错误信息
     agv_app_msgs::msg::AppData response;
     response.source_type = "state";
-    response.command_type = "errors";
+    response.command_type = "agv_state_topic";
     for (const auto& item : agv_state_lite_copy.value().errors) {
         response.errors.emplace_back(agv_app_msgs::msg::Error()
                                     .set__error_type(item.error_type)
@@ -123,12 +123,8 @@ void AgvAppServer::state_relate_timer_cb()
                                     .set__error_hint(item.error_hint)
                                     .set__error_level(item.error_level));
     }
-    pub_app_data_->publish(response);
 
-    // 发布运行任务信息
-    response.errors.clear();
-    response.source_type = "state";
-    response.command_type = "running_task";
+    // 填充运行任务信息
     if (agv_state_lite_copy->is_task_running && !agv_state_lite_copy->edegs_empty) {
         response.running_task.set__order_id(agv_state_lite_copy->order_id)
                             .set__last_node_id(agv_state_lite_copy->last_node_id);
@@ -142,6 +138,12 @@ void AgvAppServer::state_relate_timer_cb()
             }
         }
     }
+
+    // 填充操作模式
+    response.operating_mode.mode = agv_state_lite_copy->operating_mode;
+
+    // 发布状态信息
+    // 一次发布包含错误信息、运行任务信息和操作模式，这样做的原因是，上面三个信息都是来自同一个订阅，为了节省带宽，把他们放到一个 AppData 中返回。
     pub_app_data_->publish(response);
 }
 
