@@ -246,6 +246,7 @@ bool LiftingHandler::check_operating_mode() const
 
 void LiftingHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
 {
+    action.action_type = msg->lifting.action;
     action.action_description = (action.action_type == "pick" ? "取货" : "放货");
     action.action_parameters.push_back(set_action_parameter("height", msg->lifting.height));
 }
