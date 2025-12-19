@@ -220,7 +220,7 @@ Result PalletRotationHandler::validate_args(const agv_app_msgs::msg::AppRequest:
 bool PalletRotationHandler::check_operating_mode() const
 {
     // 示教/手动模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHIN || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void PalletRotationHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -241,7 +241,7 @@ Result LiftingHandler::validate_args(const agv_app_msgs::msg::AppRequest::Shared
 bool LiftingHandler::check_operating_mode() const
 {
     // 示教/手动模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHIN || get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL);
 }
 
 void LiftingHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -255,7 +255,7 @@ void LiftingHandler::create_action_parameters(const agv_app_msgs::msg::AppReques
 bool CancelTaskHandler::check_operating_mode() const
 {
     // 抢占了模式/示教模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL || get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::MANUAL || get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHIN);
 }
 
 void CancelTaskHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -290,7 +290,7 @@ bool ResumeTaskHandler::check_operating_mode() const
 bool RemoteControlHandler::check_operating_mode() const
 {
     // 示教模式才能操作
-    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHING);
+    return (get_mode_func_() == agv_app_msgs::msg::OperatingMode::TEACHIN);
 }
 
 void RemoteControlHandler::create_action_parameters(const agv_app_msgs::msg::AppRequest::SharedPtr msg, agv_service::msg::Action& action)
@@ -314,8 +314,8 @@ Result SetOperatingModeHandler::validate_args(const agv_app_msgs::msg::AppReques
         mode != agv_app_msgs::msg::OperatingMode::SEMIAUTOMATIC &&
         mode != agv_app_msgs::msg::OperatingMode::MANUAL &&
         mode != agv_app_msgs::msg::OperatingMode::SERVICE &&
-        mode != agv_app_msgs::msg::OperatingMode::TEACHING) {
-        return Result::fail("invalid mode, must be `AUTOMATIC`, `SEMIAUTOMATIC`, `MANUAL`, `SERVICE`, or `TEACHING`");
+        mode != agv_app_msgs::msg::OperatingMode::TEACHIN) {
+        return Result::fail("invalid mode, must be `AUTOMATIC`, `SEMIAUTOMATIC`, `MANUAL`, `SERVICE`, or `TEACHIN`");
     }
     return Result::ok();
 }
