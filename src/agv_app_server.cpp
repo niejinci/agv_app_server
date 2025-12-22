@@ -15,17 +15,17 @@ namespace agv_app_server
 AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
 : Node("agv_app_server", options)
 {
-    // 1. 外部接口
+    // 1. 外部接口，订阅者
     sub_app_request_ = this->create_subscription<agv_app_msgs::msg::AppRequest>("app_request_topic", 10,
         std::bind(&AgvAppServer::handle_app_request, this, std::placeholders::_1));
 
     pub_app_data_ = this->create_publisher<agv_app_msgs::msg::AppData>("app_data_topic", 50);
 
-    // 2. 内部接口 (Publishers)
+    // 2. 内部接口，发布者
     pub_agv_instant_ = this->create_publisher<agv_service::msg::InstantActions>("agv_instant_topic", 10);
     register_instant_action_handlers();
 
-    // 3. 内部接口 (Subscribers)
+    // 3. 内部接口，订阅者
     // 小车状态信息必须订阅，因为很多即时动作需要根据当前操作模式决定是否允许执行
     sub_agv_state_ = this->create_subscription<agv_service::msg::State>("agv_state_topic", 10,
         [this](const agv_service::msg::State::SharedPtr msg) {
@@ -44,7 +44,11 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             latest_agv_state_lite_ = std::move(state_lite);
         });
 
-    // 订阅连接rcs的状态，主题发布频率: 1/3hz = 3s
+    // 4. 注册数据流处理程序
+    register_data_stream_handlers();
+
+    // 5. mqtt 有关
+    // 连接rcs的状态，订阅者，主题发布频率: 1/3hz = 3s
     mqtt_state_ = this->create_subscription<agv_service::msg::MqttState>("mqtt_state_topic", 10,
                             [this](const agv_service::msg::MqttState::SharedPtr msg) {
                                 mqtt_state_online_.store(msg->online, std::memory_order_release);
@@ -55,17 +59,15 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
                                 if (count.fetch_add(1) % 20 != 0) return;
                                 LogManager::getInstance().getLogger()->info("Received MQTT state update: {}", msg->online);
                             });
-    // 5. mqtt
+    // 设置上下线，发布者
     mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
 
-    // 注册状态定时器
+    // 6. 注册状态定时器
     register_state_timer();
 
-    // 4. 注册数据流处理程序
-    register_data_stream_handlers();
 
-    // pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
-    // pub_mqtt_operate_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
+    // 7. 内部接口，发布者
+    pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
 
     LogManager::getInstance().getLogger()->info("AgvAppServer initialized.");
 }
@@ -77,7 +79,7 @@ void AgvAppServer::register_state_timer()
     state_timers_["agv_state_topic"] = std::make_shared<StateTimer>(
         this,
         "agv_state_topic",
-        std::chrono::milliseconds(400),
+        std::chrono::milliseconds(500),
         std::bind(&AgvAppServer::state_relate_timer_cb, this)
     );
 

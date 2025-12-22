@@ -57,24 +57,16 @@ private:
     rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr pub_app_data_;
 
     // 内部接口：发布者
+    // 任务订单
     rclcpp::Publisher<agv_service::msg::Order>::SharedPtr pub_agv_order_;
+    // 即时动作
     rclcpp::Publisher<agv_service::msg::InstantActions>::SharedPtr pub_agv_instant_;
-    rclcpp::Publisher<agv_service::msg::MqttState>::SharedPtr pub_mqtt_operate_;
 
     // 内部接口：订阅者
-    rclcpp::Subscription<agv_service::msg::State>::SharedPtr sub_agv_state_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_filte_scan_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_camera_points_;
-    rclcpp::Subscription<agv_service::msg::SlamLocationInfo>::SharedPtr sub_location_info_;
-    rclcpp::Subscription<agv_service::msg::MCUToPC>::SharedPtr sub_mcu_to_pc_;
-    rclcpp::Subscription<agv_service::msg::SysInfo>::SharedPtr sub_sys_info_;
-    rclcpp::Subscription<agv_service::msg::QrCameraData>::SharedPtr sub_qr_pos_;
-    rclcpp::Subscription<agv_service::msg::QrCameraData>::SharedPtr sub_qr_rack_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_scan2pc_;
-    rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_obst_polygon_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_obst_pcl_;
-    rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_model_polygon_;
+    // MQTT 连接状态
     rclcpp::Subscription<agv_service::msg::MqttState>::SharedPtr mqtt_state_;
+    // 小车状态
+    rclcpp::Subscription<agv_service::msg::State>::SharedPtr sub_agv_state_;
 
     // 即时动作管理
     // 注册各种即时动作处理程序
