@@ -23,6 +23,8 @@ find_package(agv_service REQUIRED)
 add_library(${PROJECT_NAME}_lib SHARED
   src/agv_app_server.cpp
   src/instant_action.cpp
+  src/task_parser.cpp
+  src/task_executor.cpp
 )
 
 # 关键：添加头文件搜索路径

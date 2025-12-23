@@ -23,11 +23,13 @@ namespace agv_app_server
 BaseInstantActionHandler::BaseInstantActionHandler(
     rclcpp::Publisher<agv_service::msg::InstantActions>::SharedPtr instantPublisher,
     rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr appDataPublisher,
-    std::function<std::string()> get_mode_func)
+    std::function<std::string()> get_mode_func,
+    std::function<void()> after_instant_action_sent_func)
         : headId_(0)
         , instantPublisher_(instantPublisher)
         , appDataPublisher_(appDataPublisher)
         , get_mode_func_(get_mode_func)
+        , after_instant_action_sent_func_(after_instant_action_sent_func)
         {}
 
 std::string BaseInstantActionHandler::get_current_time_as_string()
@@ -270,6 +272,9 @@ void CancelTaskHandler::create_action_parameters(const agv_app_msgs::msg::AppReq
 void CancelTaskHandler::after_instant_action_sent()
 {
     // 取消任务
+    if (after_instant_action_sent_func_) {
+        after_instant_action_sent_func_();
+    }
 }
 
 //暂停任务

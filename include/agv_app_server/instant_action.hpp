@@ -47,7 +47,8 @@ class BaseInstantActionHandler
 public:
     BaseInstantActionHandler(rclcpp::Publisher<agv_service::msg::InstantActions>::SharedPtr instantPublisher = nullptr,
         rclcpp::Publisher<agv_app_msgs::msg::AppData>::SharedPtr appDataPublisher = nullptr,
-        std::function<std::string()> get_mode_func = nullptr);
+        std::function<std::string()> get_mode_func = nullptr,
+        std::function<void()> after_instant_action_sent_func=nullptr);
     ~BaseInstantActionHandler() = default;
     virtual void handle(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
 
@@ -74,6 +75,7 @@ private:
 
 protected:
     std::function<std::string()> get_mode_func_;
+    std::function<void()> after_instant_action_sent_func_;
 };
 
 //重定位

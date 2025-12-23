@@ -38,6 +38,7 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             state_lite.last_node_sequence_id = msg->last_node_sequence_id;
             state_lite.agv_position = msg->agv_position;
             state_lite.node_states = msg->node_states;
+            state_lite.action_states = msg->action_states;
             state_lite.errors = msg->errors;
             state_lite.operating_mode = msg->operating_mode;
             state_lite.e_stop = msg->safety_state.e_stop;
@@ -65,9 +66,27 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     // 6. 注册状态定时器
     register_state_timer();
 
-
     // 7. 内部接口，发布者
     pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
+
+    // 8. plc 联动
+    pub_plc_do = this->create_publisher<agv_service::msg::DigitalOutput>("agv_do_topic", 10);
+    task_executor_ = std::make_shared<agv_app_server::TaskExecutor>(this, pub_agv_order_, pub_agv_instant_, pub_plc_do);
+
+    // 创建更可靠的QoS配置
+    // rclcpp::QoS(rclcpp::KeepLast(10))：初始化一个 QoS 配置文件，其历史策略设置为 “保留最新”，用于存储最近 10 条消息。
+    // .reliability(rclcpp::ReliabilityPolicy::Reliable)：将可靠性策略设置为 “可靠”，这意味着通信将保证消息传递（类似于 TCP）。
+    // .durability(rclcpp::DurabilityPolicy::TransientLocal)：将持久性策略设置为 “TransientLocal”，即发布者会存储消息以供后续加入的订阅者使用。
+    // 这确保订阅者即使在消息发布后才订阅，也能接收到最新的消息。
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10))
+        .reliability(rclcpp::ReliabilityPolicy::Reliable)
+        .durability(rclcpp::DurabilityPolicy::TransientLocal)
+        .history(rclcpp::HistoryPolicy::KeepLast);
+    sub_plc_di = this->create_subscription<agv_service::msg::DigitalInput>("agv_di_topic", qos,
+                                                        [this](const agv_service::msg::DigitalInput::SharedPtr msg) {
+                                                            task_executor_->plc_subscript_callback(msg->id, msg->value);
+                                                        });
+
 
     LogManager::getInstance().getLogger()->info("AgvAppServer initialized.");
 }
@@ -147,6 +166,10 @@ void AgvAppServer::state_relate_timer_cb()
     // 发布状态信息
     // 一次发布包含错误信息、运行任务信息和操作模式，这样做的原因是，上面三个信息都是来自同一个订阅，为了节省带宽，把他们放到一个 AppData 中返回。
     pub_app_data_->publish(response);
+
+    // 检查动作或任务的完成情况
+    task_executor_->check_instant_action_finish(agv_state_lite_copy.value());
+    task_executor_->check_order_finish(agv_state_lite_copy.value());
 }
 
 // 注册各种即时动作处理程序
@@ -171,7 +194,9 @@ void AgvAppServer::register_instant_action_handlers()
     // 5. LiftingHandler
     instant_action_handlers_["LIFTING"] = std::make_shared<LiftingHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 6. CancelTaskHandler
-    instant_action_handlers_["CANCEL_TASK"] = std::make_shared<CancelTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
+    instant_action_handlers_["CANCEL_TASK"] = std::make_shared<CancelTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func, [this](){
+        task_executor_->clear_status();
+    });
     // 7. PauseTaskHandler
     instant_action_handlers_["PAUSE_TASK"] = std::make_shared<PauseTaskHandler>(pub_agv_instant_, pub_app_data_, get_mode_func);
     // 8. ResumeTaskHandler
@@ -214,7 +239,7 @@ void AgvAppServer::register_data_stream_handlers()
         std::bind(&AgvAppServer::process_scan2pointcloud, this, std::placeholders::_1)
     );
 
-    // 4. 注册 obst_pcl - 障碍物点云数据流
+    // 4. 注册 obst_pcl - 障碍物点云数据流，遇到障碍物时发布, 20hz
     data_stream_handlers_["obst_pcl"] = std::make_shared<DataStreamHandler<sensor_msgs::msg::PointCloud2>>(
         this,
         "obst_pcl",
@@ -284,6 +309,11 @@ void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::Share
 
     if (msg->command_type == "GET_OPERATING_MODE") {
         get_operating_mode(msg);
+        return;
+    }
+
+    if (msg->command_type == "START_TASK_CHAIN") {
+        start_task_chain(msg);
         return;
     }
 
@@ -770,6 +800,15 @@ void AgvAppServer::get_operating_mode(const agv_app_msgs::msg::AppRequest::Share
     }
 
     pub_app_data_->publish(response);
+}
+
+void AgvAppServer::start_task_chain(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
+{
+   // 委托给任务执行者
+    task_executor_->submitTask(msg);
+
+    // 构造响应
+    publish_cmd_response(msg->request_id, msg->command_type, true, "");
 }
 
 } // namespace agv_app_server

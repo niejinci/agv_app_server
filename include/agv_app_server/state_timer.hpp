@@ -7,6 +7,7 @@
 
 #include "agv_service/msg/agv_position.hpp"
 #include "agv_service/msg/node_state.hpp"
+#include "agv_service/msg/action_state.hpp"
 #include "agv_service/msg/error.hpp"
 
 #include "rclcpp/rclcpp.hpp"
@@ -24,6 +25,7 @@ struct StateLite
     int64_t last_node_sequence_id;
     agv_service::msg::AgvPosition agv_position;
     std::vector<agv_service::msg::NodeState> node_states;
+    std::vector<agv_service::msg::ActionState> action_states;
     std::vector<agv_service::msg::Error> errors;
     std::string operating_mode;
     std::string e_stop;

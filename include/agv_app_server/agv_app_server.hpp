@@ -3,6 +3,8 @@
 
 #include "agv_app_server/data_stream_handler.hpp"
 #include "agv_app_server/state_timer.hpp"
+#include "agv_app_server/task_parser.h"
+#include "agv_app_server/task_executor.h"
 
 // 引入 AGV 相关消息
 // 内部发布/订阅使用
@@ -19,6 +21,8 @@
 #include "agv_service/msg/mcu_to_pc.hpp"
 #include "agv_service/msg/sys_info.hpp"
 #include "agv_service/msg/mqtt_state.hpp"
+#include "agv_service/msg/digital_input.hpp"
+#include "agv_service/msg/digital_output.hpp"
 
 // ros2 相关头文件
 #include "rclcpp/rclcpp.hpp"
@@ -126,6 +130,15 @@ private:
     bool should_process(rclcpp::Time& last_time, double interval_seconds);
 
     void get_operating_mode(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
+
+    // plc 订阅发布
+    // agv 订阅 di, 发布 do
+    rclcpp::Publisher<agv_service::msg::DigitalOutput>::SharedPtr pub_plc_do;
+    rclcpp::Subscription<agv_service::msg::DigitalInput>::SharedPtr sub_plc_di;
+
+    // 任务执行器
+    std::shared_ptr<agv_app_server::TaskExecutor> task_executor_;
+    void start_task_chain(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
 };
 
 } // namespace agv_app_server
