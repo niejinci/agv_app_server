@@ -21,9 +21,19 @@ int main(int argc, char * argv[])
         // 使用 make_shared 创建智能指针，确保资源管理安全
         auto node = std::make_shared<agv_app_server::AgvAppServer>();
 
+        // 使用多线程执行器
+        rclcpp::executors::MultiThreadedExecutor executor;
+        executor.add_node(node);
+
         // 3. 运行节点
         // spin 会阻塞在这里，直到收到 shutdown 信号 (Ctrl+C)
-        rclcpp::spin(node);
+        // rclcpp::spin() 默认使用的是 SingleThreadedExecutor (单线程执行器)
+        // 这意味着该节点下的所有回调函数（Subscription callbacks, Timer callbacks, Service callbacks 等）都会被添加到一个队列中，
+        // 并由调用 spin 的那个线程（即主线程 main）串行地取出并执行。
+        // rclcpp::spin(node);
+
+        // 这里会开启多个线程（默认它是 CPU 核心数）并行处理回调
+        executor.spin();
 
         // 4. 关闭上下文
         rclcpp::shutdown();

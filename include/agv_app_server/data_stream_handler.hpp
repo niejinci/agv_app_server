@@ -53,8 +53,14 @@ public:
         rclcpp::Node* node,
         const std::string& topic_name,
         const rclcpp::QoS& qos,
-        ConvertAndPublishFunc callback)
-    : node_(node), topic_name_(topic_name), qos_(qos), callback_(callback), is_active_(false)
+        ConvertAndPublishFunc callback,
+        const rclcpp::SubscriptionOptions& options = rclcpp::SubscriptionOptions())
+    : node_(node)
+      , topic_name_(topic_name)
+      , qos_(qos)
+      , callback_(callback)
+      , is_active_(false)
+     , options_(options)
     {
     }
 
@@ -73,7 +79,8 @@ public:
                 if (this->callback_) {
                     this->callback_(msg);
                 }
-            }
+            },
+            options_
         );
         is_active_ = true;
     }
@@ -96,6 +103,7 @@ private:
     rclcpp::QoS qos_;
     ConvertAndPublishFunc callback_;
     bool is_active_;
+    rclcpp::SubscriptionOptions options_;
 
     typename rclcpp::Subscription<T>::SharedPtr subscription_;
 };

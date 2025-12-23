@@ -21,9 +21,12 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
 
     pub_app_data_ = this->create_publisher<agv_app_msgs::msg::AppData>("app_data_topic", 50);
 
+    // 定义回调组
+    callback_group_pointcloud_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    callback_group_state_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
     // 2. 内部接口，发布者
     pub_agv_instant_ = this->create_publisher<agv_service::msg::InstantActions>("agv_instant_topic", 10);
-    register_instant_action_handlers();
 
     // 3. 内部接口，订阅者
     // 小车状态信息必须订阅，因为很多即时动作需要根据当前操作模式决定是否允许执行
@@ -45,10 +48,7 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             latest_agv_state_lite_ = std::move(state_lite);
         });
 
-    // 4. 注册数据流处理程序
-    register_data_stream_handlers();
-
-    // 5. mqtt 有关
+    // 4. mqtt 有关
     // 连接rcs的状态，订阅者，主题发布频率: 1/3hz = 3s
     mqtt_state_ = this->create_subscription<agv_service::msg::MqttState>("mqtt_state_topic", 10,
                             [this](const agv_service::msg::MqttState::SharedPtr msg) {
@@ -63,13 +63,10 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     // 设置上下线，发布者
     mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
 
-    // 6. 注册状态定时器
-    register_state_timer();
-
-    // 7. 内部接口，发布者
+    // 5. 内部接口，发布者
     pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
 
-    // 8. plc 联动
+    // 6. plc 联动
     pub_plc_do = this->create_publisher<agv_service::msg::DigitalOutput>("agv_do_topic", 10);
     task_executor_ = std::make_shared<agv_app_server::TaskExecutor>(this, pub_agv_order_, pub_agv_instant_, pub_plc_do);
 
@@ -87,6 +84,14 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
                                                             task_executor_->plc_subscript_callback(msg->id, msg->value);
                                                         });
 
+    // 7. 注册状态定时器
+    register_state_timer();
+
+    // 8. 注册数据流处理程序
+    register_data_stream_handlers();
+
+    // 9. 注册各种即时动作处理程序
+    register_instant_action_handlers();
 
     LogManager::getInstance().getLogger()->info("AgvAppServer initialized.");
 }
@@ -99,14 +104,16 @@ void AgvAppServer::register_state_timer()
         this,
         "agv_state_topic",
         std::chrono::milliseconds(500),
-        std::bind(&AgvAppServer::state_relate_timer_cb, this)
+        std::bind(&AgvAppServer::state_relate_timer_cb, this),
+        callback_group_state_
     );
 
     state_timers_["mqtt_state_topic"] = std::make_shared<StateTimer>(
         this,
         "mqtt_state_topic",
         std::chrono::milliseconds(3000),    // mqtt_state_topic 3s 才发布一次，这里也3秒发布一次
-        std::bind(&AgvAppServer::mqtt_state_timer_cb, this)
+        std::bind(&AgvAppServer::mqtt_state_timer_cb, this),
+        callback_group_state_
     );
 }
 
@@ -215,12 +222,18 @@ void AgvAppServer::register_instant_action_handlers()
 
 void AgvAppServer::register_data_stream_handlers()
 {
+    // 定义回调组
+    // 注册点云订阅时指定组
+    auto sub_opt = rclcpp::SubscriptionOptions();
+    sub_opt.callback_group = callback_group_pointcloud_;
+
     // 1. 注册 filte_scan - 点云数据流， 20hz
     data_stream_handlers_["filte_scan"] = std::make_shared<DataStreamHandler<sensor_msgs::msg::PointCloud2>>(
         this,
         "filte_scan",
         rclcpp::SensorDataQoS(), // 点云通常使用 SensorDataQoS(BestEffort)
-        std::bind(&AgvAppServer::process_filte_scan, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_filte_scan, this, std::placeholders::_1),
+        sub_opt
     );
 
     // 2. 注册 locationInfo - 位置信息数据流，20hz
@@ -228,7 +241,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "locationInfo",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_locationInfo, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_locationInfo, this, std::placeholders::_1),
+        sub_opt
     );
 
     // 3. 注册 scan2pointcloud - 点云数据流, 20hz
@@ -236,7 +250,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "scan2pointcloud",
         rclcpp::SensorDataQoS(),
-        std::bind(&AgvAppServer::process_scan2pointcloud, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_scan2pointcloud, this, std::placeholders::_1),
+        sub_opt
     );
 
     // 4. 注册 obst_pcl - 障碍物点云数据流，遇到障碍物时发布, 20hz
@@ -244,7 +259,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "obst_pcl",
         rclcpp::SensorDataQoS(),
-        std::bind(&AgvAppServer::process_obst_pcl, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_obst_pcl, this, std::placeholders::_1),
+        sub_opt
     );
 
     // 5. 注册 obst_polygon - 障碍物多边形数据流
@@ -252,7 +268,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "obst_polygon",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_obst_polygon, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_obst_polygon, this, std::placeholders::_1),
+        sub_opt
     );
 
     // 6. 注册 model_polygon - 模型多边形数据流
@@ -260,15 +277,20 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "model_polygon",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_model_polygon, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_model_polygon, this, std::placeholders::_1),
+        sub_opt
     );
+
+    auto sub_opt2 = rclcpp::SubscriptionOptions();
+    sub_opt2.callback_group = callback_group_state_;
 
     // 7. 注册 qr_pos_data  - 二维码位置数据流
     data_stream_handlers_["qr_pos_data"] = std::make_shared<DataStreamHandler<agv_service::msg::QrCameraData>>(
         this,
         "qr_pos_data",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_qr_pos_data, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_qr_pos_data, this, std::placeholders::_1),
+        sub_opt2
     );
 
     // 8. 注册 qr_rack_data - 二维码货架数据流
@@ -276,7 +298,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "qr_rack_data",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_qr_rack_data, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_qr_rack_data, this, std::placeholders::_1),
+        sub_opt2
     );
 
     // 9. 注册 mcu_to_pc - MCU 到 PC 的数据流， 50hz
@@ -284,7 +307,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "mcu_to_pc",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_mcu_to_pc, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_mcu_to_pc, this, std::placeholders::_1),
+        sub_opt2
     );
 
     // 10. 注册 sys_info - 系统信息数据流, 1hz
@@ -292,7 +316,8 @@ void AgvAppServer::register_data_stream_handlers()
         this,
         "sys_info",
         rclcpp::SystemDefaultsQoS(),
-        std::bind(&AgvAppServer::process_sys_info, this, std::placeholders::_1)
+        std::bind(&AgvAppServer::process_sys_info, this, std::placeholders::_1),
+        sub_opt2
     );
 
     LogManager::getInstance().getLogger()->info("All data stream handlers registered.");

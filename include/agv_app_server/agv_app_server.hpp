@@ -139,6 +139,13 @@ private:
     // 任务执行器
     std::shared_ptr<agv_app_server::TaskExecutor> task_executor_;
     void start_task_chain(const agv_app_msgs::msg::AppRequest::SharedPtr msg);
+
+    // 回调组，用于多线程执行器
+    // 点云组
+    rclcpp::CallbackGroup::SharedPtr callback_group_pointcloud_;
+    // 状态组
+    rclcpp::CallbackGroup::SharedPtr callback_group_state_;
+    // 未指定组的属于默认组
 };
 
 } // namespace agv_app_server

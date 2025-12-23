@@ -42,8 +42,14 @@ public:
         rclcpp::Node* node,
         const std::string& topic_name,
         const std::chrono::milliseconds& interval,
-        std::function<void()> callback)
-    : node_(node), topic_name_(topic_name), callback_(callback), interval_(interval), is_active_(false)
+        std::function<void()> callback,
+        const rclcpp::CallbackGroup::SharedPtr callback_group = nullptr)
+    : node_(node)
+        , topic_name_(topic_name)
+        , callback_(callback)
+        , interval_(interval)
+        , is_active_(false)
+        , callback_group_(callback_group)
     {
     }
 
@@ -54,7 +60,7 @@ public:
         LogManager::getInstance().getLogger()->info("Starting state timer: " + topic_name_);
 
         // 创建定时器
-        state_relate_timer_ = node_->create_wall_timer(interval_, callback_);
+        state_relate_timer_ = node_->create_wall_timer(interval_, callback_, callback_group_);
         is_active_ = true;
     }
 
@@ -77,6 +83,7 @@ private:
     std::function<void()> callback_;
     std::chrono::milliseconds interval_;
     bool is_active_;
+    rclcpp::CallbackGroup::SharedPtr callback_group_;
 };
 
 } // namespace agv_app_server
