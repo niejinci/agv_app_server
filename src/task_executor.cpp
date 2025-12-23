@@ -432,8 +432,6 @@ void TaskExecutor::executeSetDo(const agv_app_msgs::msg::ActionDetail& action) {
 }
 
 void TaskExecutor::executeInstantAction(const agv_app_msgs::msg::ActionDetail& action_info) {
-    LogManager::getInstance().getLogger()->info("Executing instant action: {}[{}]", action_info.action_id, action_info.name);
-
     agv_service::msg::InstantActions instantActions;
     // 设置头部
     instantActions.data_origin = "app";
@@ -443,18 +441,20 @@ void TaskExecutor::executeInstantAction(const agv_app_msgs::msg::ActionDetail& a
     instantActions.manufacturer = "BYD";
     instantActions.serial_number = "agv01";
 
-    current_instant_action_id_ = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     agv_service::msg::Action action;
     if (action_info.name == "pick" || action_info.name == "drop") {
         action = create_lifting_action(action_info.name, action_info.blocking_type, action_info.height);
     } else if (action_info.name == "start_charging") {
         action = create_start_charging_action(action_info.charging_time, action_info.blocking_type);
     }
+    current_instant_action_id_ = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     action.action_id = current_instant_action_id_;
     instantActions.actions.push_back(action);
     instant_publisher_->publish(instantActions);
 
     task_executing = true;
+
+    LogManager::getInstance().getLogger()->info("Executing instant action: {}[{}]", action.action_id, action_info.name);
 }
 
 /**

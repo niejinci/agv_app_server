@@ -337,7 +337,23 @@ void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::Share
         return;
     }
 
+    // 抢占模式才能运行
     if (msg->command_type == "START_TASK_CHAIN") {
+        bool has_manual_mode = false;
+        {
+            std::lock_guard<std::mutex> lock(agv_state_mutex_);
+            if (latest_agv_state_lite_.has_value() && latest_agv_state_lite_->operating_mode == agv_app_msgs::msg::OperatingMode::MANUAL) {
+                has_manual_mode = true;
+            }
+        }
+
+        if (!has_manual_mode) {
+            // 非抢占模式，拒绝执行
+            std::string response_msg = "Cannot start task chain: AGV is not in MANUAL mode.";
+            LogManager::getInstance().getLogger()->warn(response_msg);
+            publish_cmd_response(msg->request_id, msg->command_type, false, response_msg);
+            return;
+        }
         start_task_chain(msg);
         return;
     }
