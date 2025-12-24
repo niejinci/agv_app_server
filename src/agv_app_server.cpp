@@ -2,6 +2,11 @@
 #include "agv_app_server/agv_app_server.hpp"
 
 // 项目相关头文件
+#include "agv_app_server/start_task_chain.hpp"
+#include "agv_app_server/get_operating_mode_handler.hpp"
+#include "agv_app_server/set_rcs_online.hpp"
+#include "agv_app_server/data_subscription_handler.hpp"
+
 #include "LogManager.hpp"
 #include "agv_app_server/point_cloud_util.hpp"
 #include "agv_app_msgs/msg/operating_mode.hpp"
@@ -92,6 +97,9 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
 
     // 9. 注册各种即时动作处理程序
     register_instant_action_handlers();
+
+    // 10. 注册命令处理器
+    register_command_handlers();
 
     LogManager::getInstance().getLogger()->info("AgvAppServer initialized.");
 }
@@ -323,98 +331,6 @@ void AgvAppServer::register_data_stream_handlers()
     LogManager::getInstance().getLogger()->info("All data stream handlers registered.");
 }
 
-void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
-{
-    // 检查是否有对应的即时动作处理程序
-    auto handler = instant_action_handlers_.find(msg->command_type);
-    if (handler != instant_action_handlers_.end()) {
-        handler->second->handle(msg);
-        return;
-    }
-
-    if (msg->command_type == "GET_OPERATING_MODE") {
-        get_operating_mode(msg);
-        return;
-    }
-
-    // 抢占模式才能运行
-    if (msg->command_type == "START_TASK_CHAIN") {
-        bool has_manual_mode = false;
-        {
-            std::lock_guard<std::mutex> lock(agv_state_mutex_);
-            if (latest_agv_state_lite_.has_value() && latest_agv_state_lite_->operating_mode == agv_app_msgs::msg::OperatingMode::MANUAL) {
-                has_manual_mode = true;
-            }
-        }
-
-        if (!has_manual_mode) {
-            // 非抢占模式，拒绝执行
-            std::string response_msg = "Cannot start task chain: AGV is not in MANUAL mode.";
-            LogManager::getInstance().getLogger()->warn(response_msg);
-            publish_cmd_response(msg->request_id, msg->command_type, false, response_msg);
-            return;
-        }
-        start_task_chain(msg);
-        return;
-    }
-
-    bool success = true;
-    std::string response_msg = "Command executed successfully";
-
-    if (msg->command_type == "MANAGE_DATA_SUBSCRIPTION") {
-        // 管理数据流推送的启动和停止
-        std::string topic = msg->manage_data_subscription.topic;
-        std::string action = msg->manage_data_subscription.action;
-
-        auto it = data_stream_handlers_.find(topic);
-        if (it != data_stream_handlers_.end()) {
-            if (action == "start") {
-                it->second->start();
-                response_msg = "Started stream: " + topic;
-            } else if (action == "stop") {
-                it->second->stop();
-                response_msg = "Stopped stream: " + topic;
-            } else {
-                success = false;
-                response_msg = "Invalid action. Use start/stop.";
-            }
-        } else {
-            // 状态定时器也在这里控制打开和关闭
-            auto it2 = state_timers_.find(topic);
-            if (it2 != state_timers_.end()) {
-                if (action == "start") {
-                    it2->second->start();
-                    response_msg = "Started stream: " + topic;
-                } else if (action == "stop") {
-                    it2->second->stop();
-                    response_msg = "Stopped stream: " + topic;
-                } else {
-                    success = false;
-                    response_msg = "Invalid action. Use start/stop.";
-                }
-            } else {
-                success = false;
-                response_msg = "Unknown data stream: " + topic;
-            }
-        }
-    } else if (msg->command_type == "SET_RCS_ONLINE") {
-        set_rcs_online(msg);
-        response_msg = "RCS online state set to: " + std::to_string(msg->mqtt_state.online);
-    } else {
-        success = false;
-        response_msg = "Unknown command type";
-    }
-
-    if (success) {
-        LogManager::getInstance().getLogger()->info(response_msg);
-    } else {
-        LogManager::getInstance().getLogger()->warn(response_msg);
-    }
-
-    // 发送指令响应
-    publish_cmd_response(msg->request_id, msg->command_type, success, response_msg);
-}
-
 void AgvAppServer::publish_cmd_response(const std::string & request_id, const std::string & cmd_type,
                           bool success, const std::string & message)
 {
@@ -540,7 +456,9 @@ void AgvAppServer::process_scan2pointcloud(const sensor_msgs::msg::PointCloud2::
         agv_pos_copy = latest_agv_pos_;
     }
     if (!agv_pos_copy.has_value()) {
-        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping scan2pointcloud processing.");
+        static uint32_t count{0};
+        if (count++ % 10 == 0)
+            LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping scan2pointcloud processing.");
         return;
     }
 
@@ -568,7 +486,9 @@ void AgvAppServer::process_obst_pcl(const sensor_msgs::msg::PointCloud2::SharedP
         agv_pos_copy = latest_agv_pos_;
     }
     if (!agv_pos_copy.has_value()) {
-        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        static uint32_t count{0};
+        if (count++ % 10 == 0)
+            LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
         return;
     }
 
@@ -596,7 +516,9 @@ void AgvAppServer::process_obst_polygon(const geometry_msgs::msg::PolygonStamped
         agv_pos_copy = latest_agv_pos_;
     }
     if (!agv_pos_copy.has_value()) {
-        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        static uint32_t count{0};
+        if (count++ % 10 == 0)
+            LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
         return;
     }
 
@@ -624,7 +546,9 @@ void AgvAppServer::process_model_polygon(const geometry_msgs::msg::PolygonStampe
         agv_pos_copy = latest_agv_pos_;
     }
     if (!agv_pos_copy.has_value()) {
-        LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
+        static uint32_t count{0};
+        if (count++ % 10 == 0)
+            LogManager::getInstance().getLogger()->warn("AGV position is not available yet. Skipping obst_pcl processing.");
         return;
     }
 
@@ -815,41 +739,67 @@ bool AgvAppServer::should_process(rclcpp::Time& last_time, double interval_secon
     return true;
 }
 
-void AgvAppServer::set_rcs_online(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
+void AgvAppServer::register_command_handlers()
 {
-    agv_service::msg::MqttState mqtt_state;
-    mqtt_state.online = msg->mqtt_state.online;
-    mqtt_state_publisher_->publish(mqtt_state);
-}
-
-void AgvAppServer::get_operating_mode(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
-{
-    agv_app_msgs::msg::AppData response;
-    response.source_type = "cmd_response";
-    response.request_id = msg->request_id;
-    response.command_type = msg->command_type;
-    response.success = true;
-    response.message = "Operating mode retrieved successfully";
-
-    {
+    // 获取操作模式的 lambda
+    auto get_mode_str_fn = [this]() -> std::string {
         std::lock_guard<std::mutex> lock(agv_state_mutex_);
         if (latest_agv_state_lite_.has_value()) {
-            response.operating_mode.mode = latest_agv_state_lite_->operating_mode;
-        } else {
-            response.operating_mode.mode = agv_app_msgs::msg::OperatingMode::AUTOMATIC;
+            return latest_agv_state_lite_->operating_mode;
         }
-    }
+        return agv_app_msgs::msg::OperatingMode::AUTOMATIC;
+    };
 
-    pub_app_data_->publish(response);
+    // 1. 注册 GET_OPERATING_MODE
+    command_handlers_["GET_OPERATING_MODE"] =
+        std::make_shared<GetOperatingModeHandler>(pub_app_data_, get_mode_str_fn);
+
+    // 2. 注册 START_TASK_CHAIN
+    command_handlers_["START_TASK_CHAIN"] =
+        std::make_shared<StartTaskChainHandler>(
+            pub_app_data_,
+            get_mode_str_fn,
+            [this](const auto& msg) { task_executor_->submitTask(msg); }
+        );
+
+    // 3. 注册 MANAGE_DATA_SUBSCRIPTION
+    command_handlers_["MANAGE_DATA_SUBSCRIPTION"] =
+        std::make_shared<DataSubscriptionHandler>(
+            pub_app_data_,
+            data_stream_handlers_,
+            state_timers_
+        );
+
+    // 4. 注册 SET_RCS_ONLINE
+    command_handlers_["SET_RCS_ONLINE"] =
+        std::make_shared<SetRcsOnlineHandler>(
+            pub_app_data_,
+            mqtt_state_publisher_
+        );
+
+    LogManager::getInstance().getLogger()->info("All command handlers registered.");
 }
 
-void AgvAppServer::start_task_chain(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
+// 重构后的 handle_app_request - 简洁统一
+void AgvAppServer::handle_app_request(const agv_app_msgs::msg::AppRequest::SharedPtr msg)
 {
-   // 委托给任务执行者
-    task_executor_->submitTask(msg);
+    // 1. 首先检查即时动作处理器
+    auto instant_handler = instant_action_handlers_.find(msg->command_type);
+    if (instant_handler != instant_action_handlers_.end()) {
+        instant_handler->second->handle(msg);
+        return;
+    }
 
-    // 构造响应
-    publish_cmd_response(msg->request_id, msg->command_type, true, "");
+    // 2. 检查命令处理器
+    auto cmd_handler = command_handlers_.find(msg->command_type);
+    if (cmd_handler != command_handlers_.end()) {
+        cmd_handler->second->handle(msg);
+        return;
+    }
+
+    // 3. 未知命令类型
+    LogManager::getInstance().getLogger()->warn("Unknown command type: {}", msg->command_type);
+    publish_cmd_response(msg->request_id, msg->command_type, false, "Unknown command type");
 }
 
 } // namespace agv_app_server

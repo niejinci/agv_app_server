@@ -55,6 +55,7 @@ public:
 
     void start()
     {
+        LogManager::getInstance().getLogger()->info("attempt to start stream [{}] current state: {}", topic_name_, is_active_);
         if (is_active_) return;
 
         LogManager::getInstance().getLogger()->info("Starting state timer: " + topic_name_);
@@ -66,6 +67,7 @@ public:
 
     void stop()
     {
+        LogManager::getInstance().getLogger()->info("attempt to stop stream [{}] current state: {}", topic_name_, is_active_);
         if (!is_active_) return;
 
         LogManager::getInstance().getLogger()->info("Stopping state timer: " + topic_name_);

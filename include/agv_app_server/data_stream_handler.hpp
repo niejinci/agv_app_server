@@ -66,6 +66,8 @@ public:
 
     void start() override
     {
+        LogManager::getInstance().getLogger()->info("attempt to start stream [{}] current state: {}", topic_name_, is_active_);
+
         if (is_active_) return;
 
         LogManager::getInstance().getLogger()->info("Starting data stream: " + topic_name_);
@@ -87,6 +89,8 @@ public:
 
     void stop() override
     {
+        LogManager::getInstance().getLogger()->info("attempt to stop stream [{}] current state: {}", topic_name_, is_active_);
+
         if (!is_active_) return;
 
         LogManager::getInstance().getLogger()->info("Stopping data stream: " + topic_name_);
