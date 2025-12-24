@@ -137,7 +137,7 @@ void TaskParser::parseNavigationEdges(const agv_app_msgs::msg::Task& nav_task, s
 
         edge_detail.original_index = original_index;
         edges.push_back(edge_detail);
-        std::cout << "push edge " << edge_detail.start_point.name << "-" << edge_detail.end_point.name << "\n";
+        // std::cout << "push edge " << edge_detail.start_point.name << "-" << edge_detail.end_point.name << "\n";
     }
 }
 
@@ -150,6 +150,7 @@ agv_app_msgs::msg::ActionDetail TaskParser::parseAction(const agv_app_msgs::msg:
     // plc di/do
     action_detail.index = task.action.index;
     action_detail.value= task.action.value;
+    action_detail.desc= task.action.desc;
     // 顶升
     action_detail.height = task.action.height;
     // 充电
@@ -171,7 +172,7 @@ void TaskParser::processBindingLogic(std::vector<ParsedItem>& parsed_items) {
 
             std::string bind_node_name = findBindingNode(parsed_items, i);
             parsed_items[i].action_info.bind_node_name = bind_node_name;
-            std::cout << "bind_node_name=" << bind_node_name << "\n";
+            // std::cout << "bind_node_name=" << bind_node_name << "\n";
         }
     }
 }
@@ -189,7 +190,7 @@ std::string TaskParser::findBindingNode(std::vector<ParsedItem>& parsed_items, s
     for (int i = action_index - 1; i >= 0; --i) {
         if (parsed_items[i].type == ParsedItem::NAVIGATION && !parsed_items[i].edges.empty()) {
             parsed_items[i].edges.back().end_point_bind_action.push_back(action_index);    // 记录节点要绑定的动作索引
-            std::cout << "bind action " << action_index << " to edge end point " << parsed_items[i].edges.back().end_point.name << "\n";
+            // std::cout << "bind action " << action_index << " to edge end point " << parsed_items[i].edges.back().end_point.name << "\n";
             // 找到前面的导航任务，绑定到最后一条边的终点
             return parsed_items[i].edges.back().end_point.name;
         }
@@ -206,7 +207,7 @@ std::string TaskParser::findBindingNode(std::vector<ParsedItem>& parsed_items, s
     for (size_t i = action_index + 1; i < parsed_items.size(); ++i) {
         if (parsed_items[i].type == ParsedItem::NAVIGATION && !parsed_items[i].edges.empty()) {
             parsed_items[i].edges[0].start_point_bind_action.push_back(action_index);   // 记录节点要绑定的动作的索引
-            std::cout << "bind action " << action_index << " to edge start point " << parsed_items[i].edges[0].start_point.name << "\n";
+            // std::cout << "bind action " << action_index << " to edge start point " << parsed_items[i].edges[0].start_point.name << "\n";
             // 找到后面的导航任务，绑定到第一条边的起点
             return parsed_items[i].edges.front().start_point.name;
         }
@@ -282,7 +283,7 @@ void TaskParser::generateExecutionPlan(std::vector<ParsedItem>& parsed_items) {
                         }
                         edge.end_point.bound_actions.push_back(
                             parsed_items[action_index].action_info);
-                            std::cout << "bind " << parsed_items[action_index].action_info.name << " to " << edge.end_point.node_id << "\n";
+                            // std::cout << "bind " << parsed_items[action_index].action_info.name << " to " << edge.end_point.node_id << "\n";
                     }
                 }
             }

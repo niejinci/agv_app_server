@@ -164,11 +164,11 @@ bool TaskExecutor::processAction(const agv_app_msgs::msg::ActionDetail& action) 
         // 检查DI状态
         if (di_states.count(index) && di_states[index]) {
             // DI已经为true，直接继续下一项
-            LogManager::getInstance().getLogger()->info("DI {} already true, continuing", index);
+            LogManager::getInstance().getLogger()->info("DI {}-{} already true, continuing", index, action.desc);
             return true;
         }
         // 需要等待DI变为true
-        LogManager::getInstance().getLogger()->info("Waiting for DI {} to become true", index);
+        LogManager::getInstance().getLogger()->info("Waiting for DI {}-{} to become true", index, action.desc);
         pending_wait_action = action;
         has_pending_wait = true;
         return false;
