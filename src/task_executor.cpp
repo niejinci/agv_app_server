@@ -516,7 +516,6 @@ agv_service::msg::Action TaskExecutor::create_start_charging_action(int charging
 
 void TaskExecutor::clear_status() {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    // head_id_ = 0;
     current_instant_action_id_.clear();
     current_execute_order_id_.clear();
     task_executing = false;

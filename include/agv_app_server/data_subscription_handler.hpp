@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LogManager.hpp"
 #include "agv_app_server/command_handler.hpp"
 #include "agv_app_server/data_stream_handler.hpp"
 #include "agv_app_server/state_timer.hpp"
@@ -47,6 +48,11 @@ public:
             }
         }
 
+        // 成功时候的日志在策略对象里面打印
+        if (!success) {
+            LogManager::getInstance().getLogger()->info("false, {}", response_msg);
+        }
+
         publish_response(msg->request_id, msg->command_type, success, response_msg);
     }
 
@@ -66,7 +72,7 @@ private:
             response_msg = "Stopped stream: " + topic;
             return true;
         } else {
-            response_msg = "Invalid action. Use start/stop.";
+            response_msg = "Invalid action. Use start/stop for: " + topic;
             return false;
         }
     }

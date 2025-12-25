@@ -24,16 +24,17 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     sub_app_request_ = this->create_subscription<agv_app_msgs::msg::AppRequest>("app_request_topic", 10,
         std::bind(&AgvAppServer::handle_app_request, this, std::placeholders::_1));
 
+    // 2. 外部接口，发布者
     pub_app_data_ = this->create_publisher<agv_app_msgs::msg::AppData>("app_data_topic", 50);
 
-    // 定义回调组
+    // 33 定义回调组
     callback_group_pointcloud_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     callback_group_state_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-    // 2. 内部接口，发布者
+    // 4. 内部接口，发布者
     pub_agv_instant_ = this->create_publisher<agv_service::msg::InstantActions>("agv_instant_topic", 10);
 
-    // 3. 内部接口，订阅者
+    // 5. 内部接口，订阅者
     // 小车状态信息必须订阅，因为很多即时动作需要根据当前操作模式决定是否允许执行
     sub_agv_state_ = this->create_subscription<agv_service::msg::State>("agv_state_topic", 10,
         [this](const agv_service::msg::State::SharedPtr msg) {
@@ -53,7 +54,7 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
             latest_agv_state_lite_ = std::move(state_lite);
         });
 
-    // 4. mqtt 有关
+    // 6. mqtt 有关
     // 连接rcs的状态，订阅者，主题发布频率: 1/3hz = 3s
     mqtt_state_ = this->create_subscription<agv_service::msg::MqttState>("mqtt_state_topic", 10,
                             [this](const agv_service::msg::MqttState::SharedPtr msg) {
@@ -68,10 +69,10 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
     // 设置上下线，发布者
     mqtt_state_publisher_ = this->create_publisher<agv_service::msg::MqttState>("mqtt_operate_topic", 10);
 
-    // 5. 内部接口，发布者
+    // 7. 内部接口，发布者
     pub_agv_order_ = this->create_publisher<agv_service::msg::Order>("agv_order_topic", 10);
 
-    // 6. plc 联动
+    // 8. plc 联动
     pub_plc_do = this->create_publisher<agv_service::msg::DigitalOutput>("agv_do_topic", 10);
     task_executor_ = std::make_shared<agv_app_server::TaskExecutor>(this, pub_agv_order_, pub_agv_instant_, pub_plc_do);
 
@@ -89,16 +90,16 @@ AgvAppServer::AgvAppServer(const rclcpp::NodeOptions & options)
                                                             task_executor_->plc_subscript_callback(msg->id, msg->value);
                                                         });
 
-    // 7. 注册状态定时器
+    // 9. 注册状态定时器
     register_state_timer();
 
-    // 8. 注册数据流处理程序
+    // 10. 注册数据流处理程序
     register_data_stream_handlers();
 
-    // 9. 注册各种即时动作处理程序
+    // 11. 注册各种即时动作处理程序
     register_instant_action_handlers();
 
-    // 10. 注册命令处理器
+    // 12. 注册命令处理器
     register_command_handlers();
 
     LogManager::getInstance().getLogger()->info("AgvAppServer initialized.");
@@ -111,7 +112,7 @@ void AgvAppServer::register_state_timer()
     state_timers_["agv_state_topic"] = std::make_shared<StateTimer>(
         this,
         "agv_state_topic",
-        std::chrono::milliseconds(500),
+        std::chrono::milliseconds(500),     // 2hz
         std::bind(&AgvAppServer::state_relate_timer_cb, this),
         callback_group_state_
     );
@@ -123,6 +124,8 @@ void AgvAppServer::register_state_timer()
         std::bind(&AgvAppServer::mqtt_state_timer_cb, this),
         callback_group_state_
     );
+
+    LogManager::getInstance().getLogger()->info("Registered state timers: agv_state_topic, mqtt_state_topic.");
 }
 
 void AgvAppServer::mqtt_state_timer_cb()
@@ -144,7 +147,9 @@ void AgvAppServer::state_relate_timer_cb()
         agv_state_lite_copy = latest_agv_state_lite_;
     }
     if (!agv_state_lite_copy.has_value()) {
-        // LogManager::getInstance().getLogger()->warn("AGV state is not available yet. Skipping processing.");
+        static uint32_t count{0};
+        if (count++ % 10 == 0)
+            LogManager::getInstance().getLogger()->warn("AGV state is not available yet. Skipping processing.");
         return;
     }
 
@@ -195,7 +200,7 @@ void AgvAppServer::register_instant_action_handlers()
         if (latest_agv_state_lite_.has_value()) {
             return latest_agv_state_lite_->operating_mode;
         }
-        return "UNkNOWN";
+        return agv_app_msgs::msg::OperatingMode::AUTOMATIC;
     };
 
     // 1. RelocationHandler
@@ -226,12 +231,13 @@ void AgvAppServer::register_instant_action_handlers()
     instant_action_handlers_["SOFT_RESET"] = std::make_shared<SoftResetHandler>(pub_agv_instant_, pub_app_data_);
     // 13. SetOperatingModeHandler
     instant_action_handlers_["SET_OPERATING_MODE"] = std::make_shared<SetOperatingModeHandler>(pub_agv_instant_, pub_app_data_);
+
+    LogManager::getInstance().getLogger()->info("Registered instant action handlers.");
 }
 
 void AgvAppServer::register_data_stream_handlers()
 {
-    // 定义回调组
-    // 注册点云订阅时指定组
+    // 注册订阅时指定组(点云组)
     auto sub_opt = rclcpp::SubscriptionOptions();
     sub_opt.callback_group = callback_group_pointcloud_;
 
@@ -289,6 +295,7 @@ void AgvAppServer::register_data_stream_handlers()
         sub_opt
     );
 
+    // 注册订阅时指定组(状态组)
     auto sub_opt2 = rclcpp::SubscriptionOptions();
     sub_opt2.callback_group = callback_group_state_;
 

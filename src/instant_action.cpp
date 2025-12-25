@@ -138,7 +138,7 @@ void BaseInstantActionHandler::handle(const agv_app_msgs::msg::AppRequest::Share
     response.success = true;
     appDataPublisher_->publish(response);
 
-    LogManager::getInstance().getLogger()->info("Instant action [{}] of type [{}] sent.", msg->command_type, action.action_type);
+    LogManager::getInstance().getLogger()->info("Send instant action [{}] of type [{}]", msg->command_type, action.action_type);
 }
 
 //重定位
